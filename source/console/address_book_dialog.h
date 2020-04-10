@@ -1,17 +1,29 @@
 //
-// PROJECT:         Aspia
-// FILE:            console/address_book_dialog.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef _ASPIA_CONSOLE__ADDRESS_BOOK_DIALOG_H
-#define _ASPIA_CONSOLE__ADDRESS_BOOK_DIALOG_H
+#ifndef CONSOLE__ADDRESS_BOOK_DIALOG_H
+#define CONSOLE__ADDRESS_BOOK_DIALOG_H
 
-#include "protocol/address_book.pb.h"
+#include "base/macros_magic.h"
+#include "proto/address_book.pb.h"
 #include "ui_address_book_dialog.h"
 
-namespace aspia {
+namespace console {
 
 class AddressBookDialog : public QDialog
 {
@@ -19,10 +31,11 @@ class AddressBookDialog : public QDialog
 
 public:
     AddressBookDialog(QWidget* parent,
+                      const QString& file_path,
                       proto::address_book::File* file,
                       proto::address_book::Data* data,
-                      QByteArray* key);
-    ~AddressBookDialog();
+                      std::string* key);
+    ~AddressBookDialog() = default;
 
 protected:
     // QDialog implementation.
@@ -31,7 +44,6 @@ protected:
 private slots:
     void buttonBoxClicked(QAbstractButton* button);
     void encryptionTypedChanged(int item_index);
-    void hashingRoundsChanged(int value);
     void hashingSaltChanged(int value);
 
 private:
@@ -42,14 +54,14 @@ private:
 
     proto::address_book::File* file_;
     proto::address_book::Data* data_;
-    QByteArray* key_;
+    std::string* key_;
 
     bool password_changed_ = true;
     bool value_reverting_ = false;
 
-    Q_DISABLE_COPY(AddressBookDialog)
+    DISALLOW_COPY_AND_ASSIGN(AddressBookDialog);
 };
 
-} // namespace aspia
+} // namespace console
 
-#endif // _ASPIA_CONSOLE__ADDRESS_BOOK_DIALOG_H
+#endif // CONSOLE__ADDRESS_BOOK_DIALOG_H

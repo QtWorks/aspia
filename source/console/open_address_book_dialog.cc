@@ -1,19 +1,33 @@
 //
-// PROJECT:         Aspia
-// FILE:            console/open_address_book_dialog.cc
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
 #include "console/open_address_book_dialog.h"
+#include "base/logging.h"
 
-namespace aspia {
+namespace console {
 
-OpenAddressBookDialog::OpenAddressBookDialog(
-    QWidget* parent, proto::address_book::EncryptionType encryption_type)
+OpenAddressBookDialog::OpenAddressBookDialog(QWidget* parent,
+                                             const QString& file_path,
+                                             proto::address_book::EncryptionType encryption_type)
     : QDialog(parent)
 {
     ui.setupUi(this);
+    setFixedHeight(sizeHint().height());
 
     connect(ui.button_show_password, &QPushButton::toggled,
             this, &OpenAddressBookDialog::showPasswordButtonToggled);
@@ -27,19 +41,18 @@ OpenAddressBookDialog::OpenAddressBookDialog(
             ui.edit_encryption_type->setText(tr("Without Encryption"));
             break;
 
-        case proto::address_book::ENCRYPTION_TYPE_XCHACHA20_POLY1305:
-            ui.edit_encryption_type->setText(tr("XChaCha20 + Poly1305 (256-bit key)"));
+        case proto::address_book::ENCRYPTION_TYPE_CHACHA20_POLY1305:
+            ui.edit_encryption_type->setText(tr("ChaCha20 + Poly1305 (256-bit key)"));
             break;
 
         default:
-            qFatal("Unknown encryption type: %d", encryption_type);
+            LOG(LS_FATAL) << "Unknown encryption type: " << encryption_type;
             break;
     }
 
+    ui.edit_file->setText(file_path);
     ui.edit_password->setFocus();
 }
-
-OpenAddressBookDialog::~OpenAddressBookDialog() = default;
 
 QString OpenAddressBookDialog::password() const
 {
@@ -71,4 +84,4 @@ void OpenAddressBookDialog::buttonBoxClicked(QAbstractButton* button)
     close();
 }
 
-} // namespace aspia
+} // namespace console

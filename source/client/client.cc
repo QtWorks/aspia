@@ -1,188 +1,187 @@
 //
-// PROJECT:         Aspia
-// FILE:            client/client.cc
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
 #include "client/client.h"
 
-#include "client/ui/authorization_dialog.h"
-#include "client/ui/status_dialog.h"
-#include "client/client_session_desktop_manage.h"
-#include "client/client_session_desktop_view.h"
-#include "client/client_session_file_transfer.h"
-#include "client/client_user_authorizer.h"
-#include "crypto/secure_memory.h"
+#include "base/logging.h"
+#include "build/version.h"
+#include "client/status_window_proxy.h"
 
-namespace aspia {
+namespace client {
 
-Client::Client(const proto::address_book::Computer& computer, QObject* parent)
-    : QObject(parent),
-      computer_(computer)
+Client::Client(std::shared_ptr<base::TaskRunner> ui_task_runner)
+    : ui_task_runner_(std::move(ui_task_runner))
 {
-    // Create a network channel.
-    network_channel_ = NetworkChannel::createClient(this);
-
-    // Create a status dialog. It displays all information about the progress of the connection
-    // and errors.
-    status_dialog_ = new StatusDialog();
-
-    connect(network_channel_, &NetworkChannel::connected, this, &Client::onChannelConnected);
-    connect(network_channel_, &NetworkChannel::errorOccurred, this, &Client::onChannelError);
-    connect(network_channel_, &NetworkChannel::disconnected, this, &Client::onChannelDisconnected);
-
-    connect(status_dialog_, &StatusDialog::finished, [this](int /* result */)
-    {
-        // When the status dialog is finished, we stop the connection.
-        network_channel_->stop();
-
-        // Delete the dialog after the finish.
-        status_dialog_->deleteLater();
-
-        // When the status dialog is finished, we call the client's termination.
-        emit clientTerminated(this);
-    });
-
-    QString address = QString::fromStdString(computer_.address());
-    int port = computer_.port();
-
-    status_dialog_->show();
-    status_dialog_->activateWindow();
-
-    status_dialog_->addStatus(tr("Attempt to connect to %1:%2.").arg(address).arg(port));
-    network_channel_->connectToHost(address, port);
+    DCHECK(ui_task_runner_);
+    DCHECK(ui_task_runner_->belongsToCurrentThread());
 }
 
 Client::~Client()
 {
-    secureMemZero(computer_.mutable_name());
-    secureMemZero(computer_.mutable_address());
-    secureMemZero(computer_.mutable_username());
-    secureMemZero(computer_.mutable_password());
-    secureMemZero(computer_.mutable_comment());
+    DCHECK(ui_task_runner_->belongsToCurrentThread());
+    stop();
 }
 
-void Client::onChannelConnected()
+bool Client::start(const Config& config)
 {
-    status_dialog_->addStatus(tr("Connection established."));
+    DCHECK(ui_task_runner_->belongsToCurrentThread());
 
-    authorizer_ = new ClientUserAuthorizer(status_dialog_);
+    config_ = config;
 
-    authorizer_->setSessionType(computer_.session_type());
-    authorizer_->setUserName(QString::fromStdString(computer_.username()));
-    authorizer_->setPassword(QString::fromStdString(computer_.password()));
-
-    // Connect authorizer to network.
-    connect(authorizer_, &ClientUserAuthorizer::writeMessage,
-            network_channel_, &NetworkChannel::writeMessage);
-
-    connect(authorizer_, &ClientUserAuthorizer::readMessage,
-            network_channel_, &NetworkChannel::readMessage);
-
-    connect(network_channel_, &NetworkChannel::messageReceived,
-            authorizer_, &ClientUserAuthorizer::messageReceived);
-
-    connect(network_channel_, &NetworkChannel::messageWritten,
-            authorizer_, &ClientUserAuthorizer::messageWritten);
-
-    connect(network_channel_, &NetworkChannel::disconnected,
-            authorizer_, &ClientUserAuthorizer::cancel);
-
-    connect(authorizer_, &ClientUserAuthorizer::errorOccurred,
-            status_dialog_, &StatusDialog::addStatus);
-
-    // If successful, we start the session.
-    connect(authorizer_, &ClientUserAuthorizer::finished, this, &Client::onAuthorizationFinished);
-
-    // Now run authorization.
-    status_dialog_->addStatus(tr("Authorization started."));
-    authorizer_->start();
-}
-
-void Client::onChannelDisconnected()
-{
-    status_dialog_->addStatus(tr("Disconnected."));
-}
-
-void Client::onChannelError(const QString& message)
-{
-    status_dialog_->addStatus(tr("Network error: %1.").arg(message));
-}
-
-void Client::onAuthorizationFinished(proto::auth::Status status)
-{
-    delete authorizer_;
-
-    switch (status)
+    if (!status_window_proxy_)
     {
-        case proto::auth::STATUS_SUCCESS:
-            status_dialog_->addStatus(tr("Successful authorization."));
-            break;
-
-        case proto::auth::STATUS_ACCESS_DENIED:
-            status_dialog_->addStatus(tr("Authorization error: Access denied."));
-            return;
-
-        case proto::auth::STATUS_CANCELED:
-            status_dialog_->addStatus(tr("Authorization has been canceled."));
-            return;
-
-        default:
-            status_dialog_->addStatus(tr("Authorization error: Unknown status code."));
-            return;
+        DLOG(LS_ERROR) << "Attempt to start the client without status window";
+        return false;
     }
 
-    switch (computer_.session_type())
+    // Start the thread for IO.
+    io_thread_.start(base::MessageLoop::Type::ASIO, this);
+    return true;
+}
+
+void Client::stop()
+{
+    DCHECK(ui_task_runner_->belongsToCurrentThread());
+
+    io_thread_.stop();
+}
+
+void Client::setStatusWindow(StatusWindow* status_window)
+{
+    DCHECK(ui_task_runner_->belongsToCurrentThread());
+    DCHECK(!status_window_proxy_);
+
+    status_window_proxy_ = StatusWindowProxy::create(ui_task_runner_, status_window);
+}
+
+// static
+base::Version Client::version()
+{
+    return base::Version(ASPIA_VERSION_MAJOR, ASPIA_VERSION_MINOR, ASPIA_VERSION_PATCH);
+}
+
+std::shared_ptr<base::TaskRunner> Client::ioTaskRunner() const
+{
+    return io_task_runner_;
+}
+
+std::shared_ptr<base::TaskRunner> Client::uiTaskRunner() const
+{
+    return ui_task_runner_;
+}
+
+std::u16string Client::computerName() const
+{
+    return config_.computer_name;
+}
+
+proto::SessionType Client::sessionType() const
+{
+    return config_.session_type;
+}
+
+void Client::sendMessage(const google::protobuf::MessageLite& message)
+{
+    channel_->send(base::serialize(message));
+}
+
+void Client::onBeforeThreadRunning()
+{
+    // Initialize the task runner for IO.
+    io_task_runner_ = io_thread_.taskRunner();
+
+    // Show the status window.
+    status_window_proxy_->onStarted(config_.address, config_.port);
+
+    // Create a network channel for messaging.
+    channel_ = std::make_unique<net::Channel>();
+
+    // Set the listener for the network channel.
+    channel_->setListener(this);
+
+    // Now connect to the host.
+    channel_->connect(config_.address, config_.port);
+}
+
+void Client::onAfterThreadRunning()
+{
+    authenticator_.reset();
+    channel_.reset();
+
+    if (session_started_)
     {
-        case proto::auth::SESSION_TYPE_DESKTOP_MANAGE:
-            session_ = new ClientSessionDesktopManage(&computer_, this);
-            break;
-
-        case proto::auth::SESSION_TYPE_DESKTOP_VIEW:
-            session_ = new ClientSessionDesktopView(&computer_, this);
-            break;
-
-        case proto::auth::SESSION_TYPE_FILE_TRANSFER:
-            session_ = new ClientSessionFileTransfer(&computer_, this);
-            break;
-
-        default:
-            status_dialog_->addStatus(tr("Unsupported session type."));
-            return;
+        // Session stopped.
+        onSessionStopped();
     }
-
-    // Messages received from the network are sent to the session.
-    connect(session_, &ClientSession::readMessage, network_channel_, &NetworkChannel::readMessage);
-    connect(network_channel_, &NetworkChannel::messageReceived, session_, &ClientSession::messageReceived);
-    connect(session_, &ClientSession::writeMessage, network_channel_, &NetworkChannel::writeMessage);
-    connect(network_channel_, &NetworkChannel::messageWritten, session_, &ClientSession::messageWritten);
-    connect(network_channel_, &NetworkChannel::disconnected, session_, &ClientSession::closeSession);
-
-    // When closing the session (closing the window), close the status dialog.
-    connect(session_, &ClientSession::closedByUser, this, &Client::onSessionClosedByUser);
-
-    // If an error occurs in the session, add a message to the status dialog and stop the channel.
-    connect(session_, &ClientSession::errorOccurred,
-            this, &Client::onSessionError,
-            Qt::QueuedConnection);
-
-    status_dialog_->addStatus(tr("Session started."));
-    status_dialog_->hide();
-
-    session_->startSession();
 }
 
-void Client::onSessionClosedByUser()
+void Client::onConnected()
 {
-    status_dialog_->show();
-    status_dialog_->close();
+    static const size_t kReadBufferSize = 2 * 1024 * 1024; // 2 Mb.
+    static const std::chrono::minutes kKeepAliveTime{ 1 };
+    static const std::chrono::seconds kKeepAliveInterval{ 3 };
+
+    channel_->setReadBufferSize(kReadBufferSize);
+    channel_->setKeepAlive(true, kKeepAliveTime, kKeepAliveInterval);
+    channel_->setNoDelay(true);
+
+    authenticator_ = std::make_unique<net::ClientAuthenticator>();
+
+    authenticator_->setIdentify(proto::IDENTIFY_SRP);
+    authenticator_->setUserName(config_.username);
+    authenticator_->setPassword(config_.password);
+    authenticator_->setSessionType(config_.session_type);
+
+    authenticator_->start(std::move(channel_),
+                          [this](net::ClientAuthenticator::ErrorCode error_code)
+    {
+        if (error_code == net::ClientAuthenticator::ErrorCode::SUCCESS)
+        {
+            // The authenticator takes the listener on itself, we return the receipt of
+            // notifications.
+            channel_ = authenticator_->takeChannel();
+            channel_->setListener(this);
+
+            status_window_proxy_->onConnected();
+
+            session_started_ = true;
+
+            // Signal that everything is ready to start the session (connection established,
+            // authentication passed).
+            onSessionStarted(authenticator_->peerVersion());
+
+            // Now the session will receive incoming messages.
+            channel_->resume();
+        }
+        else
+        {
+            status_window_proxy_->onAccessDenied(error_code);
+        }
+
+        // Authenticator is no longer needed.
+        io_task_runner_->deleteSoon(std::move(authenticator_));
+    });
 }
 
-void Client::onSessionError(const QString& message)
+void Client::onDisconnected(net::Channel::ErrorCode error_code)
 {
-    status_dialog_->addStatus(message);
-    network_channel_->stop();
+    // Show an error to the user.
+    status_window_proxy_->onDisconnected(error_code);
 }
 
-} // namespace aspia
+} // namespace client

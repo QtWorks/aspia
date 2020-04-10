@@ -1,33 +1,75 @@
 //
-// PROJECT:         Aspia
-// FILE:            console/address_book_dialog.cc
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
 #include "console/address_book_dialog.h"
 
+#include "base/logging.h"
+#include "crypto/password_hash.h"
+#include "crypto/random.h"
+
 #include <QAbstractButton>
 #include <QMessageBox>
 
-#include "crypto/data_encryptor.h"
-#include "crypto/random.h"
-
-namespace aspia {
+namespace console {
 
 namespace {
 
 constexpr int kMaxNameLength = 64;
 constexpr int kMinNameLength = 1;
-constexpr int kMinPasswordLength = 8;
+constexpr int kMinPasswordLength = 1;
 constexpr int kMaxPasswordLength = 64;
+constexpr int kSafePasswordLength = 8;
 constexpr int kMaxCommentLength = 2048;
+
+bool isSafePassword(const QString& password)
+{
+    int length = password.length();
+
+    if (length < kSafePasswordLength)
+        return false;
+
+    bool has_upper = false;
+    bool has_lower = false;
+    bool has_digit = false;
+
+    for (int i = 0; i < length; ++i)
+    {
+        const QChar& character = password[i];
+
+        has_upper |= character.isUpper();
+        has_lower |= character.isLower();
+        has_digit |= character.isDigit();
+    }
+
+    return has_upper && has_lower && has_digit;
+}
 
 } // namespace
 
-AddressBookDialog::AddressBookDialog(QWidget* parent, proto::address_book::File* file,
-                                     proto::address_book::Data* data, QByteArray* key)
-    : QDialog(parent), file_(file), data_(data), key_(key)
+AddressBookDialog::AddressBookDialog(QWidget* parent,
+                                     const QString& file_path,
+                                     proto::address_book::File* file,
+                                     proto::address_book::Data* data,
+                                     std::string* key)
+    : QDialog(parent),
+      file_(file),
+      data_(data),
+      key_(key)
 {
     ui.setupUi(this);
 
@@ -38,19 +80,34 @@ AddressBookDialog::AddressBookDialog(QWidget* parent, proto::address_book::File*
 
     ui.combo_encryption->addItem(tr("Without Encryption"),
                                  QVariant(proto::address_book::ENCRYPTION_TYPE_NONE));
-    ui.combo_encryption->addItem(tr("XChaCha20 + Poly1305 (256-bit key)"),
-                                 QVariant(proto::address_book::ENCRYPTION_TYPE_XCHACHA20_POLY1305));
+    ui.combo_encryption->addItem(tr("ChaCha20 + Poly1305 (256-bit key)"),
+                                 QVariant(proto::address_book::ENCRYPTION_TYPE_CHACHA20_POLY1305));
 
-    ui.edit_name->setText(QString::fromStdString(data_->root_group().name()));
+    const std::string& address_book_name = data_->root_group().name();
+    if (!address_book_name.empty())
+    {
+        // Use the name of the root group of computers.
+        ui.edit_name->setText(QString::fromStdString(address_book_name));
+    }
+    else
+    {
+        // Set the default address book name.
+        ui.edit_name->setText(tr("Address Book"));
+    }
+
+    ui.edit_file->setText(file_path);
+    if (file_path.isEmpty())
+        ui.edit_file->setEnabled(false);
+
     ui.edit_comment->setPlainText(QString::fromStdString(data_->root_group().comment()));
 
     int current = ui.combo_encryption->findData(QVariant(file->encryption_type()));
     if (current != -1)
         ui.combo_encryption->setCurrentIndex(current);
 
-    if (file->encryption_type() == proto::address_book::ENCRYPTION_TYPE_XCHACHA20_POLY1305)
+    if (file->encryption_type() == proto::address_book::ENCRYPTION_TYPE_CHACHA20_POLY1305)
     {
-        if (!key_->isEmpty())
+        if (!key_->empty())
         {
             QString text = tr("Double-click to change");
 
@@ -70,7 +127,6 @@ AddressBookDialog::AddressBookDialog(QWidget* parent, proto::address_book::File*
             ui.edit_password_repeat->installEventFilter(this);
 
             ui.spinbox_password_salt->setValue(file_->hashing_salt().size());
-            ui.spinbox_hashing_rounds->setValue(file_->hashing_rounds());
 
             ui.spinbox_salt_before->setValue(data_->salt1().size());
             ui.spinbox_salt_after->setValue(data_->salt2().size());
@@ -80,7 +136,7 @@ AddressBookDialog::AddressBookDialog(QWidget* parent, proto::address_book::File*
     }
     else
     {
-        Q_ASSERT(file->encryption_type() == proto::address_book::ENCRYPTION_TYPE_NONE);
+        DCHECK_EQ(file->encryption_type(), proto::address_book::ENCRYPTION_TYPE_NONE);
 
         ui.edit_password->setEnabled(false);
 
@@ -88,16 +144,11 @@ AddressBookDialog::AddressBookDialog(QWidget* parent, proto::address_book::File*
         ui.tab_widget->setTabEnabled(1, false);
     }
 
-    connect(ui.spinbox_hashing_rounds, QOverload<int>::of(&QSpinBox::valueChanged), this,
-            &AddressBookDialog::hashingRoundsChanged);
-
     connect(ui.spinbox_password_salt, QOverload<int>::of(&QSpinBox::valueChanged), this,
             &AddressBookDialog::hashingSaltChanged);
 
     ui.edit_name->setFocus();
 }
-
-AddressBookDialog::~AddressBookDialog() = default;
 
 bool AddressBookDialog::eventFilter(QObject* object, QEvent* event)
 {
@@ -129,7 +180,8 @@ void AddressBookDialog::buttonBoxClicked(QAbstractButton* button)
     QString name = ui.edit_name->text();
     if (name.length() > kMaxNameLength)
     {
-        showError(tr("Too long name. The maximum length of the name is 64 characters."));
+        showError(tr("Too long name. The maximum length of the name is %n characters.",
+                     "", kMaxNameLength));
         return;
     }
     else if (name.length() < kMinNameLength)
@@ -141,7 +193,8 @@ void AddressBookDialog::buttonBoxClicked(QAbstractButton* button)
     QString comment = ui.edit_comment->toPlainText();
     if (comment.length() > kMaxCommentLength)
     {
-        showError(tr("Too long comment. The maximum length of the comment is 2048 characters."));
+        showError(tr("Too long comment. The maximum length of the comment is %n characters.",
+                     "", kMaxCommentLength));
         return;
     }
 
@@ -154,14 +207,12 @@ void AddressBookDialog::buttonBoxClicked(QAbstractButton* button)
         case proto::address_book::ENCRYPTION_TYPE_NONE:
         {
             file_->mutable_hashing_salt()->clear();
-            file_->set_hashing_rounds(0);
-
             data_->mutable_salt1()->clear();
             data_->mutable_salt2()->clear();
         }
         break;
 
-        case proto::address_book::ENCRYPTION_TYPE_XCHACHA20_POLY1305:
+        case proto::address_book::ENCRYPTION_TYPE_CHACHA20_POLY1305:
         {
             if (password_changed_)
             {
@@ -174,39 +225,61 @@ void AddressBookDialog::buttonBoxClicked(QAbstractButton* button)
                     return;
                 }
 
-                if (password.length() < kMinPasswordLength)
+                if (password.length() < kMinPasswordLength || password.length() > kMaxPasswordLength)
                 {
-                    showError(tr("Password can not be shorter than 8 characters."));
+                    showError(tr("Password can not be empty and should not exceed %n characters.",
+                                 "", kMaxPasswordLength));
                     return;
+                }
+
+                if (!isSafePassword(password))
+                {
+                    QString unsafe =
+                        tr("Password you entered does not meet the security requirements!");
+
+                    QString safe =
+                        tr("The password must contain lowercase and uppercase characters, "
+                           "numbers and should not be shorter than %n characters.",
+                           "", kSafePasswordLength);
+
+                    QString question = tr("Do you want to enter a different password?");
+
+                    if (QMessageBox::warning(this,
+                                             tr("Warning"),
+                                             QString("<b>%1</b><br/>%2<br/>%3")
+                                                 .arg(unsafe).arg(safe).arg(question),
+                                             QMessageBox::Yes,
+                                             QMessageBox::No) == QMessageBox::Yes)
+                    {
+                        ui.edit_password->clear();
+                        ui.edit_password_repeat->clear();
+                        ui.edit_password->setFocus();
+                        return;
+                    }
                 }
 
                 // Generate salt, which is added after each iteration of the hashing.
                 // New salt is generated each time the password is changed.
-                QByteArray hashing_salt =
-                    Random::generateBuffer(ui.spinbox_password_salt->value());
-
-                // Save the salt and the number of hashing iterations.
-                file_->set_hashing_rounds(ui.spinbox_hashing_rounds->value());
-                *file_->mutable_hashing_salt() = hashing_salt.toStdString();
+                file_->set_hashing_salt(crypto::Random::string(ui.spinbox_password_salt->value()));
 
                 // Now generate a key for encryption/decryption.
-                *key_ = DataEncryptor::createKey(password.toUtf8(), hashing_salt,
-                                                 file_->hashing_rounds());
+                *key_ = crypto::PasswordHash::hash(
+                    crypto::PasswordHash::SCRYPT, password.toStdString(), file_->hashing_salt());
             }
 
             int salt_before_size = ui.spinbox_salt_before->value();
             int salt_after_size = ui.spinbox_salt_after->value();
 
             if (salt_before_size != data_->salt1().size())
-                *data_->mutable_salt1() = Random::generateBuffer(salt_before_size).toStdString();
+                data_->set_salt1(crypto::Random::string(salt_before_size));
 
             if (salt_after_size != data_->salt2().size())
-                *data_->mutable_salt2() = Random::generateBuffer(salt_after_size).toStdString();
+                data_->set_salt2(crypto::Random::string(salt_after_size));
         }
         break;
 
         default:
-            qFatal("Unexpected encryption type: %d", encryption_type);
+            LOG(LS_FATAL) << "Unexpected encryption type: " << encryption_type;
             return;
     }
 
@@ -240,7 +313,7 @@ void AddressBookDialog::encryptionTypedChanged(int item_index)
         }
         break;
 
-        case proto::address_book::ENCRYPTION_TYPE_XCHACHA20_POLY1305:
+        case proto::address_book::ENCRYPTION_TYPE_CHACHA20_POLY1305:
         {
             ui.edit_password->setEnabled(true);
             ui.edit_password_repeat->setEnabled(true);
@@ -251,30 +324,8 @@ void AddressBookDialog::encryptionTypedChanged(int item_index)
         break;
 
         default:
-            qFatal("Unexpected encryption type: %d", encryption_type);
+            LOG(LS_FATAL) << "Unexpected encryption type: " << encryption_type;
             break;
-    }
-}
-
-void AddressBookDialog::hashingRoundsChanged(int /* value */)
-{
-    if (password_changed_ || value_reverting_)
-        return;
-
-    if (QMessageBox::question(
-        this,
-        tr("Confirmation"),
-        tr("At change the number of hashing iterations, you will need to re-enter the password. Continue?"),
-        QMessageBox::Yes | QMessageBox::No) == QMessageBox::Yes)
-    {
-        setPasswordChanged();
-    }
-    else
-    {
-        // Revert value.
-        value_reverting_ = true;
-        ui.spinbox_hashing_rounds->setValue(file_->hashing_rounds());
-        value_reverting_ = false;
     }
 }
 
@@ -327,4 +378,4 @@ void AddressBookDialog::showError(const QString& message)
     QMessageBox(QMessageBox::Warning, tr("Warning"), message, QMessageBox::Ok, this).exec();
 }
 
-} // namespace aspia
+} // namespace console

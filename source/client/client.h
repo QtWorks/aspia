@@ -1,52 +1,104 @@
 //
-// PROJECT:         Aspia
-// FILE:            client/client.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef _ASPIA_CLIENT__CLIENT_H
-#define _ASPIA_CLIENT__CLIENT_H
+#ifndef CLIENT__CLIENT_H
+#define CLIENT__CLIENT_H
 
-#include "client/client_session.h"
-#include "network/network_channel.h"
-#include "protocol/address_book.pb.h"
+#include "base/version.h"
+#include "base/threading/thread.h"
+#include "client/client_config.h"
+#include "net/channel.h"
 
-namespace aspia {
+namespace base {
+class TaskRunner;
+} // namespace base
 
-class ClientUserAuthorizer;
-class StatusDialog;
+namespace net {
+class ClientAuthenticator;
+} // namespace net
 
-class Client : public QObject
+namespace client {
+
+class StatusWindow;
+class StatusWindowProxy;
+
+class Client
+    : public base::Thread::Delegate,
+      public net::Channel::Listener
 {
-    Q_OBJECT
-
 public:
-    Client(const proto::address_book::Computer& computer, QObject* parent = nullptr);
-    ~Client();
+    explicit Client(std::shared_ptr<base::TaskRunner> ui_task_runner);
+    virtual ~Client();
 
-signals:
-    void clientTerminated(Client* client);
+    // Starts a session.
+    bool start(const Config& config);
 
-private slots:
-    void onChannelConnected();
-    void onChannelDisconnected();
-    void onChannelError(const QString& message);
-    void onAuthorizationFinished(proto::auth::Status status);
-    void onSessionClosedByUser();
-    void onSessionError(const QString& message);
+    // Stops a session.
+    void stop();
+
+    // Sets the implementation of the status window.
+    // The method must be called before calling method start().
+    void setStatusWindow(StatusWindow* status_window);
+
+    // Returns the version of the current client.
+    static base::Version version();
+
+    Config config() const { return config_; }
+
+protected:
+    std::shared_ptr<base::TaskRunner> ioTaskRunner() const;
+    std::shared_ptr<base::TaskRunner> uiTaskRunner() const;
+
+    std::u16string computerName() const;
+    proto::SessionType sessionType() const;
+
+    // Indicates that the session is started.
+    // When calling this method, the client implementation should display a session window.
+    virtual void onSessionStarted(const base::Version& peer_version) = 0;
+
+    // Indicates that the session is stopped.
+    // When calling this method, the client implementation must destroy the session window.
+    virtual void onSessionStopped() = 0;
+
+    // Sends outgoing message.
+    void sendMessage(const google::protobuf::MessageLite& message);
+
+    // base::Thread::Delegate implementation.
+    void onBeforeThreadRunning() override;
+    void onAfterThreadRunning() override;
+
+    // net::Channel::Listener implementation.
+    void onConnected() override;
+    void onDisconnected(net::Channel::ErrorCode error_code) override;
 
 private:
-    QPointer<NetworkChannel> network_channel_;
-    QPointer<StatusDialog> status_dialog_;
-    QPointer<ClientUserAuthorizer> authorizer_;
-    QPointer<ClientSession> session_;
+    base::Thread io_thread_;
+    std::shared_ptr<base::TaskRunner> io_task_runner_;
+    std::shared_ptr<base::TaskRunner> ui_task_runner_;
 
-    proto::address_book::Computer computer_;
+    std::unique_ptr<net::Channel> channel_;
+    std::unique_ptr<net::ClientAuthenticator> authenticator_;
+    std::unique_ptr<StatusWindowProxy> status_window_proxy_;
 
-    Q_DISABLE_COPY(Client)
+    bool session_started_ = false;
+    Config config_;
 };
 
-} // namespace aspia
+} // namespace client
 
-#endif // _ASPIA_CLIENT__CLIENT_H
+#endif // CLIENT__CLIENT_H

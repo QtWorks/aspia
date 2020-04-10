@@ -1,34 +1,33 @@
 //
-// PROJECT:         Aspia
-// FILE:            base/win/security_helpers.cc
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
 #include "base/win/security_helpers.h"
 
-#include <QDebug>
+#include "base/logging.h"
+#include "base/win/scoped_local.h"
+#include "base/win/scoped_object.h"
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
 #include <objidl.h>
 #include <sddl.h>
 
-#include <memory>
-#include <string>
-
-#include "base/win/scoped_object.h"
-#include "base/win/scoped_local.h"
-#include "base/errno_logging.h"
-#include "base/typed_buffer.h"
-
-namespace aspia {
+namespace base::win {
 
 namespace {
-
-using ScopedAcl = TypedBuffer<ACL>;
-using ScopedSd = TypedBuffer<SECURITY_DESCRIPTOR>;
-using ScopedSid = TypedBuffer<SID>;
 
 bool makeScopedAbsoluteSd(const ScopedSd& relative_sd,
                           ScopedSd* absolute_sd,
@@ -57,7 +56,7 @@ bool makeScopedAbsoluteSd(const ScopedSd& relative_sd,
                        &group_size) ||
         GetLastError() != ERROR_INSUFFICIENT_BUFFER)
     {
-        qWarningErrno("MakeAbsoluteSD failed");
+        PLOG(LS_WARNING) << "MakeAbsoluteSD failed";
         return false;
     }
 
@@ -81,7 +80,7 @@ bool makeScopedAbsoluteSd(const ScopedSd& relative_sd,
                         local_group.get(),
                         &group_size))
     {
-        qWarningErrno("MakeAbsoluteSD failed");
+        PLOG(LS_WARNING) << "MakeAbsoluteSD failed";
         return false;
     }
 
@@ -94,7 +93,82 @@ bool makeScopedAbsoluteSd(const ScopedSd& relative_sd,
     return true;
 }
 
-bool getUserSidString(std::wstring* user_sid)
+} // namespace
+
+bool initializeComSecurity(const wchar_t* security_descriptor,
+                           const wchar_t* mandatory_label,
+                           bool activate_as_activator)
+{
+    std::wstring sddl;
+
+    sddl.append(security_descriptor);
+    sddl.append(mandatory_label);
+
+    // Convert the SDDL description into a security descriptor in absolute format.
+    ScopedSd relative_sd = convertSddlToSd(sddl);
+    if (!relative_sd)
+    {
+        LOG(LS_WARNING) << "Failed to create a security descriptor";
+        return false;
+    }
+
+    ScopedSd absolute_sd;
+    ScopedAcl dacl;
+    ScopedSid group;
+    ScopedSid owner;
+    ScopedAcl sacl;
+
+    if (!makeScopedAbsoluteSd(relative_sd, &absolute_sd, &dacl,
+                              &group, &owner, &sacl))
+    {
+        LOG(LS_WARNING) << "MakeScopedAbsoluteSd failed";
+        return false;
+    }
+
+    DWORD capabilities = EOAC_DYNAMIC_CLOAKING;
+    if (!activate_as_activator)
+        capabilities |= EOAC_DISABLE_AAA;
+
+    // Apply the security descriptor and default security settings. See
+    // InitializeComSecurity's declaration for details.
+    HRESULT result = CoInitializeSecurity(
+        absolute_sd.get(),
+        -1,        // Let COM choose which authentication services to register.
+        nullptr,   // See above.
+        nullptr,   // Reserved, must be nullptr.
+        RPC_C_AUTHN_LEVEL_PKT_PRIVACY,
+        RPC_C_IMP_LEVEL_IDENTIFY,
+        nullptr,   // Default authentication information is not provided.
+        capabilities,
+        nullptr);  // Reserved, must be nullptr
+    if (FAILED(result))
+    {
+        LOG(LS_WARNING) << "CoInitializeSecurity failed: " << SystemError::toString(result);
+        return false;
+    }
+
+    return true;
+}
+
+ScopedSd convertSddlToSd(const std::wstring& sddl)
+{
+    ScopedLocal<PSECURITY_DESCRIPTOR> raw_sd;
+    ULONG length = 0;
+
+    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.c_str(), SDDL_REVISION_1,
+        raw_sd.recieve(), &length))
+    {
+        PLOG(LS_WARNING) << "ConvertStringSecurityDescriptorToSecurityDescriptorW failed";
+        return ScopedSd();
+    }
+
+    ScopedSd sd(length);
+    memcpy(sd.get(), raw_sd, length);
+
+    return sd;
+}
+
+bool userSidString(std::wstring* user_sid)
 {
     // Get the current token.
     ScopedHandle token;
@@ -119,83 +193,7 @@ bool getUserSidString(std::wstring* user_sid)
         return false;
 
     user_sid->assign(sid_string);
-
     return true;
 }
 
-ScopedSd convertSddlToSd(const std::wstring& sddl)
-{
-    ScopedLocal<PSECURITY_DESCRIPTOR> raw_sd;
-    ULONG length = 0;
-
-    if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.c_str(), SDDL_REVISION_1,
-                                                              raw_sd.recieve(), &length))
-    {
-        qWarningErrno("ConvertStringSecurityDescriptorToSecurityDescriptorW failed");
-        return ScopedSd();
-    }
-
-    ScopedSd sd(length);
-    memcpy(sd.get(), raw_sd, length);
-
-    return sd;
-}
-
-} // namespace
-
-bool initializeComSecurity(const wchar_t* security_descriptor,
-                           const wchar_t* mandatory_label,
-                           bool activate_as_activator)
-{
-    std::wstring sddl;
-
-    sddl.append(security_descriptor);
-    sddl.append(mandatory_label);
-
-    // Convert the SDDL description into a security descriptor in absolute format.
-    ScopedSd relative_sd = convertSddlToSd(sddl);
-    if (!relative_sd)
-    {
-        qWarning("Failed to create a security descriptor");
-        return false;
-    }
-
-    ScopedSd absolute_sd;
-    ScopedAcl dacl;
-    ScopedSid group;
-    ScopedSid owner;
-    ScopedAcl sacl;
-
-    if (!makeScopedAbsoluteSd(relative_sd, &absolute_sd, &dacl,
-                              &group, &owner, &sacl))
-    {
-        qWarning("MakeScopedAbsoluteSd failed");
-        return false;
-    }
-
-    DWORD capabilities = EOAC_DYNAMIC_CLOAKING;
-    if (!activate_as_activator)
-        capabilities |= EOAC_DISABLE_AAA;
-
-    // Apply the security descriptor and default security settings. See
-    // InitializeComSecurity's declaration for details.
-    HRESULT result = CoInitializeSecurity(
-        absolute_sd.get(),
-        -1,        // Let COM choose which authentication services to register.
-        nullptr,   // See above.
-        nullptr,   // Reserved, must be nullptr.
-        RPC_C_AUTHN_LEVEL_PKT_PRIVACY,
-        RPC_C_IMP_LEVEL_IDENTIFY,
-        nullptr,   // Default authentication information is not provided.
-        capabilities,
-        nullptr);  // Reserved, must be nullptr
-    if (FAILED(result))
-    {
-        qWarning() << "CoInitializeSecurity failed: " << result;
-        return false;
-    }
-
-    return true;
-}
-
-} // namespace aspia
+} // namespace base::win

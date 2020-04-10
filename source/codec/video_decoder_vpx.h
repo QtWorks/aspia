@@ -1,30 +1,33 @@
 //
-// PROJECT:         Aspia
-// FILE:            codec/video_decoder_vpx.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef _ASPIA_CODEC__VIDEO_DECODER_VPX_H
-#define _ASPIA_CODEC__VIDEO_DECODER_VPX_H
+#ifndef CODEC__VIDEO_DECODER_VPX_H
+#define CODEC__VIDEO_DECODER_VPX_H
 
-extern "C" {
-
-#pragma warning(push)
-#pragma warning(disable:4505)
-
-#define VPX_CODEC_DISABLE_COMPAT 1
-#include "vpx/vpx_decoder.h"
-#include "vpx/vp8dx.h"
-
-#pragma warning(pop)
-
-} // extern "C"
-
+#include "base/macros_magic.h"
 #include "codec/scoped_vpx_codec.h"
 #include "codec/video_decoder.h"
 
-namespace aspia {
+#define VPX_CODEC_DISABLE_COMPAT 1
+#include <vpx/vpx_decoder.h>
+#include <vpx/vp8dx.h>
+
+namespace codec {
 
 class VideoDecoderVPX : public VideoDecoder
 {
@@ -34,16 +37,16 @@ public:
     static std::unique_ptr<VideoDecoderVPX> createVP8();
     static std::unique_ptr<VideoDecoderVPX> createVP9();
 
-    bool decode(const proto::desktop::VideoPacket& packet, DesktopFrame* frame) override;
+    bool decode(const proto::VideoPacket& packet, desktop::Frame* frame) override;
 
 private:
-    explicit VideoDecoderVPX(proto::desktop::VideoEncoding encoding);
+    explicit VideoDecoderVPX(proto::VideoEncoding encoding);
 
     ScopedVpxCodec codec_;
 
-    Q_DISABLE_COPY(VideoDecoderVPX)
+    DISALLOW_COPY_AND_ASSIGN(VideoDecoderVPX);
 };
 
-} // namespace aspia
+} // namespace codec
 
-#endif // _ASPIA_CODEC__VIDEO_DECODER_VPX_H
+#endif // CODEC__VIDEO_DECODER_VPX_H

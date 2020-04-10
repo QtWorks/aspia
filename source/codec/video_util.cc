@@ -1,20 +1,31 @@
 //
-// PROJECT:         Aspia
-// FILE:            codec/video_util.cc
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
 #include "codec/video_util.h"
 
-namespace aspia {
+namespace codec {
 
-QRect VideoUtil::fromVideoRect(const proto::desktop::Rect& rect)
+desktop::Rect parseRect(const proto::Rect& rect)
 {
-    return QRect(rect.x(), rect.y(), rect.width(), rect.height());
+    return desktop::Rect::makeXYWH(rect.x(), rect.y(), rect.width(), rect.height());
 }
 
-void VideoUtil::toVideoRect(const QRect& from, proto::desktop::Rect* to)
+void serializeRect(const desktop::Rect& from, proto::Rect* to)
 {
     to->set_x(from.x());
     to->set_y(from.y());
@@ -22,29 +33,19 @@ void VideoUtil::toVideoRect(const QRect& from, proto::desktop::Rect* to)
     to->set_height(from.height());
 }
 
-QSize VideoUtil::fromVideoSize(const proto::desktop::Size& size)
+desktop::PixelFormat parsePixelFormat(const proto::PixelFormat& format)
 {
-    return QSize(size.width(), size.height());
+    return desktop::PixelFormat(
+        static_cast<uint8_t>(format.bits_per_pixel()),
+        static_cast<uint16_t>(format.red_max()),
+        static_cast<uint16_t>(format.green_max()),
+        static_cast<uint16_t>(format.blue_max()),
+        static_cast<uint8_t>(format.red_shift()),
+        static_cast<uint8_t>(format.green_shift()),
+        static_cast<uint8_t>(format.blue_shift()));
 }
 
-void VideoUtil::toVideoSize(const QSize& from, proto::desktop::Size* to)
-{
-    to->set_width(from.width());
-    to->set_height(from.height());
-}
-
-PixelFormat VideoUtil::fromVideoPixelFormat(const proto::desktop::PixelFormat& format)
-{
-    return PixelFormat(static_cast<uint8_t>(format.bits_per_pixel()),
-                       static_cast<uint16_t>(format.red_max()),
-                       static_cast<uint16_t>(format.green_max()),
-                       static_cast<uint16_t>(format.blue_max()),
-                       static_cast<uint8_t>(format.red_shift()),
-                       static_cast<uint8_t>(format.green_shift()),
-                       static_cast<uint8_t>(format.blue_shift()));
-}
-
-void VideoUtil::toVideoPixelFormat(const PixelFormat& from, proto::desktop::PixelFormat* to)
+void serializePixelFormat(const desktop::PixelFormat& from, proto::PixelFormat* to)
 {
     to->set_bits_per_pixel(from.bitsPerPixel());
 
@@ -57,4 +58,4 @@ void VideoUtil::toVideoPixelFormat(const PixelFormat& from, proto::desktop::Pixe
     to->set_blue_shift(from.blueShift());
 }
 
-} // namespace aspia
+} // namespace codec

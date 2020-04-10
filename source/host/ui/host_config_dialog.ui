@@ -6,17 +6,17 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>359</width>
-    <height>295</height>
+    <width>304</width>
+    <height>296</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Host Configuration</string>
+   <string>Settings</string>
   </property>
   <property name="sizeGripEnabled">
    <bool>true</bool>
   </property>
-  <layout class="QVBoxLayout" name="verticalLayout_2">
+  <layout class="QVBoxLayout" name="verticalLayout_3">
    <item>
     <widget class="QTabWidget" name="tab_general">
      <property name="currentIndex">
@@ -26,49 +26,19 @@
       <attribute name="title">
        <string>General</string>
       </attribute>
-      <layout class="QVBoxLayout" name="verticalLayout_4">
+      <layout class="QVBoxLayout" name="verticalLayout_2">
        <item>
-        <widget class="QGroupBox" name="groupbox_ui">
-         <property name="title">
-          <string>User Interface</string>
-         </property>
-         <layout class="QHBoxLayout" name="horizontalLayout_4">
-          <item>
-           <widget class="QLabel" name="label_language">
-            <property name="text">
-             <string>Language:</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QComboBox" name="combobox_language"/>
-          </item>
-         </layout>
-        </widget>
-       </item>
-       <item>
-        <widget class="QGroupBox" name="groupbox_service">
+        <widget class="QGroupBox" name="groupBox">
          <property name="title">
           <string>Service</string>
          </property>
-         <layout class="QVBoxLayout" name="verticalLayout_3">
+         <layout class="QVBoxLayout" name="verticalLayout_4">
           <item>
-           <layout class="QHBoxLayout" name="horizontalLayout_3">
-            <item>
-             <widget class="QLabel" name="label_service_status_title">
-              <property name="text">
-               <string>Service Status:</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLabel" name="label_service_status">
-              <property name="text">
-               <string notr="true">Not Started</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
+           <widget class="QLabel" name="label_service_status">
+            <property name="text">
+             <string notr="true">Current state:</string>
+            </property>
+           </widget>
           </item>
           <item>
            <layout class="QHBoxLayout" name="horizontalLayout_2">
@@ -86,14 +56,14 @@
              </spacer>
             </item>
             <item>
-             <widget class="QPushButton" name="pushbutton_service_start_stop">
+             <widget class="QPushButton" name="button_service_start_stop">
               <property name="text">
                <string notr="true">Start</string>
               </property>
              </widget>
             </item>
             <item>
-             <widget class="QPushButton" name="pushbutton_service_install_remove">
+             <widget class="QPushButton" name="button_service_install_remove">
               <property name="text">
                <string notr="true">Install</string>
               </property>
@@ -109,7 +79,7 @@
          <property name="title">
           <string>Incoming Connections</string>
          </property>
-         <layout class="QHBoxLayout" name="horizontalLayout_5">
+         <layout class="QHBoxLayout" name="horizontalLayout_4">
           <item>
            <widget class="QLabel" name="label_port">
             <property name="text">
@@ -127,6 +97,42 @@
             </property>
             <property name="value">
              <number>8050</number>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="groupbox_import_export">
+         <property name="title">
+          <string>Settings</string>
+         </property>
+         <layout class="QHBoxLayout" name="horizontalLayout_3">
+          <item>
+           <spacer name="horizontalSpacer_2">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>113</width>
+              <height>20</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QPushButton" name="button_import">
+            <property name="text">
+             <string>Import...</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="button_export">
+            <property name="text">
+             <string>Export...</string>
             </property>
            </widget>
           </item>
@@ -163,12 +169,15 @@
              <verstretch>0</verstretch>
             </sizepolicy>
            </property>
+           <property name="toolTip">
+            <string>Add new user</string>
+           </property>
            <property name="text">
             <string/>
            </property>
            <property name="icon">
-            <iconset resource="../../resources/resources.qrc">
-             <normaloff>:/icon/user-plus.png</normaloff>:/icon/user-plus.png</iconset>
+            <iconset resource="../resources/host.qrc">
+             <normaloff>:/img/plus.png</normaloff>:/img/plus.png</iconset>
            </property>
           </widget>
          </item>
@@ -180,12 +189,15 @@
              <verstretch>0</verstretch>
             </sizepolicy>
            </property>
+           <property name="toolTip">
+            <string>Edit user</string>
+           </property>
            <property name="text">
             <string/>
            </property>
            <property name="icon">
-            <iconset resource="../../resources/resources.qrc">
-             <normaloff>:/icon/user-pencil.png</normaloff>:/icon/user-pencil.png</iconset>
+            <iconset resource="../resources/host.qrc">
+             <normaloff>:/img/pencil.png</normaloff>:/img/pencil.png</iconset>
            </property>
           </widget>
          </item>
@@ -197,12 +209,15 @@
              <verstretch>0</verstretch>
             </sizepolicy>
            </property>
+           <property name="toolTip">
+            <string>Delete user</string>
+           </property>
            <property name="text">
             <string/>
            </property>
            <property name="icon">
-            <iconset resource="../../resources/resources.qrc">
-             <normaloff>:/icon/user-minus.png</normaloff>:/icon/user-minus.png</iconset>
+            <iconset resource="../resources/host.qrc">
+             <normaloff>:/img/minus.png</normaloff>:/img/minus.png</iconset>
            </property>
           </widget>
          </item>
@@ -241,6 +256,87 @@
        </item>
       </layout>
      </widget>
+     <widget class="QWidget" name="tab">
+      <attribute name="title">
+       <string>Update</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_8">
+       <item>
+        <widget class="QGroupBox" name="groupbox_update_server">
+         <property name="title">
+          <string>Update Server</string>
+         </property>
+         <layout class="QVBoxLayout" name="verticalLayout_6">
+          <item>
+           <widget class="QCheckBox" name="checkbox_use_custom_server">
+            <property name="text">
+             <string>Use custom update server</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_6">
+            <item>
+             <widget class="QLabel" name="label">
+              <property name="text">
+               <string>Server:</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="edit_update_server">
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+              <property name="text">
+               <string notr="true">update.aspia.org</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_3">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>83</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayout_7">
+         <item>
+          <spacer name="horizontalSpacer_3">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="button_check_updates">
+           <property name="text">
+            <string>Check for updates</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
     </widget>
    </item>
    <item>
@@ -253,8 +349,8 @@
   </layout>
   <action name="action_add">
    <property name="icon">
-    <iconset resource="../../resources/resources.qrc">
-     <normaloff>:/icon/user-plus.png</normaloff>:/icon/user-plus.png</iconset>
+    <iconset>
+     <normaloff>:/img/user-plus.png</normaloff>:/img/user-plus.png</iconset>
    </property>
    <property name="text">
     <string>Add</string>
@@ -262,8 +358,8 @@
   </action>
   <action name="action_modify">
    <property name="icon">
-    <iconset resource="../../resources/resources.qrc">
-     <normaloff>:/icon/user-pencil.png</normaloff>:/icon/user-pencil.png</iconset>
+    <iconset>
+     <normaloff>:/img/user-pencil.png</normaloff>:/img/user-pencil.png</iconset>
    </property>
    <property name="text">
     <string>Modify</string>
@@ -271,8 +367,8 @@
   </action>
   <action name="action_delete">
    <property name="icon">
-    <iconset resource="../../resources/resources.qrc">
-     <normaloff>:/icon/user-minus.png</normaloff>:/icon/user-minus.png</iconset>
+    <iconset>
+     <normaloff>:/img/user-minus.png</normaloff>:/img/user-minus.png</iconset>
    </property>
    <property name="text">
     <string>Delete</string>
@@ -280,7 +376,7 @@
   </action>
  </widget>
  <resources>
-  <include location="../../resources/resources.qrc"/>
+  <include location="../resources/host.qrc"/>
  </resources>
  <connections/>
 </ui>

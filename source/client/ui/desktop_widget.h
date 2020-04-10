@@ -1,33 +1,58 @@
 //
-// PROJECT:         Aspia
-// FILE:            client/ui/desktop_widget.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef _ASPIA_CLIENT__UI__DESKTOP_WIDGET_H
-#define _ASPIA_CLIENT__UI__DESKTOP_WIDGET_H
+#ifndef CLIENT__UI__DESKTOP_WIDGET_H
+#define CLIENT__UI__DESKTOP_WIDGET_H
+
+#include "build/build_config.h"
+#if defined(OS_WIN)
+#include "base/win/scoped_user_object.h"
+#endif // defined(OS_WIN)
+#include "desktop/desktop_frame.h"
 
 #include <QEvent>
 #include <QWidget>
+
 #include <memory>
+#include <set>
 
-#include "desktop_capture/desktop_frame.h"
-
-namespace aspia {
-
-class DesktopFrameQImage;
+namespace client {
 
 class DesktopWidget : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit DesktopWidget(QWidget* parent);
-    ~DesktopWidget();
+    class Delegate
+    {
+    public:
+        virtual ~Delegate() = default;
 
-    void resizeDesktopFrame(const QSize& screen_size);
-    DesktopFrame* desktopFrame();
+        virtual void onPointerEvent(const QPoint& pos, uint32_t mask) = 0;
+        virtual void onKeyEvent(uint32_t usb_keycode, uint32_t flags) = 0;
+        virtual void onDrawDesktop() = 0;
+    };
+
+    DesktopWidget(Delegate* delegate, QWidget* parent);
+    ~DesktopWidget() = default;
+
+    desktop::Frame* desktopFrame();
+    void setDesktopFrame(std::shared_ptr<desktop::Frame>& frame);
 
     void doMouseEvent(QEvent::Type event_type,
                       const Qt::MouseButtons& buttons,
@@ -36,11 +61,11 @@ public:
     void doKeyEvent(QKeyEvent* event);
 
 public slots:
-    void executeKeySequense(int key_sequence);
+    void executeKeyCombination(int key_sequence);
 
-signals:
-    void sendKeyEvent(quint32 usb_keycode, quint32 flags);
-    void sendPointerEvent(const QPoint& pos, quint32 mask);
+    // Enables or disables the sending of key combinations. It only affects the input received
+    // from the user. Slot |executeKeySequense| can send key combinations.
+    void enableKeyCombinations(bool enable);
 
 protected:
     // QWidget implementation.
@@ -53,16 +78,31 @@ protected:
     void keyPressEvent(QKeyEvent* event) override;
     void keyReleaseEvent(QKeyEvent* event) override;
     void leaveEvent(QEvent *event) override;
+    void focusInEvent(QFocusEvent* event) override;
+    void focusOutEvent(QFocusEvent* event) override;
 
 private:
-    std::unique_ptr<DesktopFrameQImage> frame_;
+    void executeKeyEvent(uint32_t usb_keycode, uint32_t flags);
+
+#if defined(OS_WIN)
+    static LRESULT CALLBACK keyboardHookProc(INT code, WPARAM wparam, LPARAM lparam);
+
+    base::win::ScopedHHOOK keyboard_hook_;
+#endif // defined(OS_WIN)
+
+    Delegate* delegate_;
+
+    std::shared_ptr<desktop::Frame> frame_;
+    bool enable_key_sequenses_ = true;
 
     QPoint prev_pos_;
-    quint32 prev_mask_ = 0;
+    uint32_t prev_mask_ = 0;
 
-    Q_DISABLE_COPY(DesktopWidget)
+    std::set<uint32_t> pressed_keys_;
+
+    DISALLOW_COPY_AND_ASSIGN(DesktopWidget);
 };
 
-} // namespace aspia
+} // namespace client
 
-#endif // _ASPIA_CLIENT__UI__DESKTOP_WIDGET_H
+#endif // CLIENT__UI__DESKTOP_WIDGET_H

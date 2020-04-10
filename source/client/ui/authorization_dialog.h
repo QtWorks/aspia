@@ -1,16 +1,30 @@
 //
-// PROJECT:         Aspia
-// FILE:            client/ui/authorization_dialog.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef _ASPIA_CLIENT__UI__AUTHORIZATION_DIALOG_H
-#define _ASPIA_CLIENT__UI__AUTHORIZATION_DIALOG_H
+#ifndef CLIENT__UI__AUTHORIZATION_DIALOG_H
+#define CLIENT__UI__AUTHORIZATION_DIALOG_H
 
+#include "base/macros_magic.h"
 #include "ui_authorization_dialog.h"
 
-namespace aspia {
+class QAbstractButton;
+
+namespace client {
 
 class AuthorizationDialog : public QDialog
 {
@@ -27,6 +41,7 @@ public:
     void setPassword(const QString& password);
 
 protected:
+    // QDialog implementation.
     void showEvent(QShowEvent* event) override;
 
 private slots:
@@ -36,9 +51,9 @@ private slots:
 private:
     Ui::AuthorizationDialog ui;
 
-    Q_DISABLE_COPY(AuthorizationDialog)
+    DISALLOW_COPY_AND_ASSIGN(AuthorizationDialog);
 };
 
-} // namespace aspia
+} // namespace client
 
-#endif // _ASPIA_CLIENT__UI__AUTHORIZATION_DIALOG_H
+#endif // CLIENT__UI__AUTHORIZATION_DIALOG_H

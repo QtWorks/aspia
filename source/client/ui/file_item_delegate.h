@@ -1,65 +1,56 @@
 //
-// PROJECT:         Aspia
-// FILE:            client/ui/file_item_delegate.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef _ASPIA_CLIENT__UI__FILE_ITEM_DELEGATE_H
-#define _ASPIA_CLIENT__UI__FILE_ITEM_DELEGATE_H
+#ifndef CLIENT__UI__FILE_ITEM_DELEGATE_H
+#define CLIENT__UI__FILE_ITEM_DELEGATE_H
+
+#include "base/macros_magic.h"
 
 #include <QStyledItemDelegate>
 
-namespace aspia {
+namespace client {
 
-class FileReadOnlyColumnDelegate : public QStyledItemDelegate
-{
-public:
-    explicit FileReadOnlyColumnDelegate(QWidget* parent = nullptr)
-        : QStyledItemDelegate(parent)
-    {
-        // Nothing
-    }
-
-    QWidget* createEditor(QWidget* /* parent */,
-                          const QStyleOptionViewItem& /* option */,
-                          const QModelIndex& /* index */) const override
-    {
-        return nullptr;
-    }
-
-private:
-    Q_DISABLE_COPY(FileReadOnlyColumnDelegate)
-};
-
-class FileColumnDelegate : public QStyledItemDelegate
+class FileItemDelegate : public QStyledItemDelegate
 {
     Q_OBJECT
 
 public:
-    explicit FileColumnDelegate(QWidget* parent = nullptr)
-        : QStyledItemDelegate(parent)
-    {
-        // Nothing
-    }
+    explicit FileItemDelegate(QObject* parent);
 
+    // QStyledItemDelegate implementation.
+    QWidget* createEditor(QWidget* parent,
+                          const QStyleOptionViewItem& option,
+                          const QModelIndex& index) const override;
+    void setEditorData(QWidget* editor, const QModelIndex& index) const override;
     void setModelData(QWidget* editor,
                       QAbstractItemModel* model,
-                      const QModelIndex& index) const override
-    {
-        QStyledItemDelegate::setModelData(editor, model, index);
-
-        if (index.column() == 0)
-            emit editingFinished(index);
-    }
+                      const QModelIndex& index) const override;
+    void updateEditorGeometry(QWidget* editor,
+                              const QStyleOptionViewItem& option,
+                              const QModelIndex& index) const override;
 
 signals:
-    void editingFinished(const QModelIndex& index) const;
+    void editFinished();
 
 private:
-    Q_DISABLE_COPY(FileColumnDelegate)
+    DISALLOW_COPY_AND_ASSIGN(FileItemDelegate);
 };
 
-} // namespace aspia
+} // namespace client
 
-#endif // _ASPIA_CLIENT__UI__FILE_ITEM_DELEGATE_H
+#endif // CLIENT__UI__FILE_ITEM_DELEGATE_H

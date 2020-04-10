@@ -1,17 +1,29 @@
 //
-// PROJECT:         Aspia
-// FILE:            base/win/scoped_handle.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef _ASPIA_BASE__WIN__SCOPED_HANDLE_H
-#define _ASPIA_BASE__WIN__SCOPED_HANDLE_H
+#ifndef BASE__WIN__SCOPED_HANDLE_H
+#define BASE__WIN__SCOPED_HANDLE_H
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "base/macros_magic.h"
 
-namespace aspia {
+#include <Windows.h>
+
+namespace base::win {
 
 template<class T, class Traits>
 class ScopedObject
@@ -65,6 +77,13 @@ public:
         return Traits::isValid(object_);
     }
 
+    void swap(ScopedObject& other)
+    {
+        T object = other.object_;
+        other.object_ = object_;
+        object_ = object;
+    }
+
     ScopedObject& operator=(ScopedObject&& other) noexcept
     {
         Traits::close(object_);
@@ -81,7 +100,7 @@ public:
 private:
     T object_ = nullptr;
 
-    Q_DISABLE_COPY(ScopedObject)
+    DISALLOW_COPY_AND_ASSIGN(ScopedObject);
 };
 
 class HandleObjectTraits
@@ -136,6 +155,6 @@ using ScopedHandle = ScopedObject<HANDLE, HandleObjectTraits>;
 using ScopedScHandle = ScopedObject<SC_HANDLE, ScHandleObjectTraits>;
 using ScopedEventLog = ScopedObject<HANDLE, EventLogObjectTraits>;
 
-} // namespace aspia
+} // namespace base::win
 
-#endif // _ASPIA_BASE__WIN__SCOPED_HANDLE_H
+#endif // BASE__WIN__SCOPED_HANDLE_H

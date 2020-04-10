@@ -1,108 +1,116 @@
 //
-// PROJECT:         Aspia
-// FILE:            client/file_remove_queue_builder.cc
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
 #include "client/file_remove_queue_builder.h"
 
-#include <QCoreApplication>
+#include "base/logging.h"
+#include "base/strings/string_util.h"
+#include "common/file_task_factory.h"
+#include "common/file_task_consumer_proxy.h"
+#include "common/file_task_producer_proxy.h"
 
-#include "client/file_status.h"
-#include "host/file_request.h"
+namespace client {
 
-namespace aspia {
-
-namespace {
-
-const char* kReplySlot = "reply";
-
-} // namespace
-
-FileRemoveQueueBuilder::FileRemoveQueueBuilder(QObject* parent)
-    : QObject(parent)
+FileRemoveQueueBuilder::FileRemoveQueueBuilder(
+    std::shared_ptr<common::FileTaskConsumerProxy> task_consumer_proxy,
+    common::FileTask::Target target)
+    : task_consumer_proxy_(std::move(task_consumer_proxy)),
+      task_producer_proxy_(std::make_shared<common::FileTaskProducerProxy>(this))
 {
-    // Nothing
+    DCHECK(task_consumer_proxy_);
+
+    task_factory_ = std::make_unique<common::FileTaskFactory>(task_producer_proxy_, target);
 }
 
-FileRemoveQueueBuilder::~FileRemoveQueueBuilder() = default;
-
-QQueue<FileRemoveTask> FileRemoveQueueBuilder::taskQueue() const
+FileRemoveQueueBuilder::~FileRemoveQueueBuilder()
 {
-    return tasks_;
+    task_producer_proxy_->dettach();
 }
 
-void FileRemoveQueueBuilder::start(const QString& path, const QList<FileRemover::Item>& items)
+void FileRemoveQueueBuilder::start(
+    const FileRemover::TaskList& items, const FinishCallback& callback)
 {
-    emit started();
+    pending_tasks_ = items;
 
-    for (const auto& item : items)
-        pending_tasks_.push_back(FileRemoveTask(path + item.name, item.is_directory));
+    callback_ = std::move(callback);
+    DCHECK(callback_);
 
-    processNextPendingTask();
+    doPendingTasks();
 }
 
-void FileRemoveQueueBuilder::reply(const proto::file_transfer::Request& request,
-                                   const proto::file_transfer::Reply& reply)
+FileRemover::TaskList FileRemoveQueueBuilder::takeQueue()
 {
+    return std::move(tasks_);
+}
+
+void FileRemoveQueueBuilder::onTaskDone(std::shared_ptr<common::FileTask> task)
+{
+    const proto::FileRequest& request = task->request();
+    const proto::FileReply& reply = task->reply();
+
     if (!request.has_file_list_request())
     {
-        processError(tr("An unexpected answer was received."));
+        onAborted(proto::FILE_ERROR_UNKNOWN);
         return;
     }
 
-    if (reply.status() != proto::file_transfer::STATUS_SUCCESS)
+    if (reply.error_code() != proto::FILE_ERROR_SUCCESS)
     {
-        processError(tr("An error occurred while retrieving the list of files: %1")
-                     .arg(fileStatusToString(reply.status())));
+        onAborted(reply.error_code());
         return;
     }
 
-    QString path = QString::fromStdString(request.file_list_request().path());
-    path.replace('\\', '/');
-    if (!path.endsWith('/'))
-        path += '/';
+    const std::string& path = request.file_list_request().path();
 
     for (int i = 0; i < reply.file_list().item_size(); ++i)
     {
-        const proto::file_transfer::FileList::Item& item = reply.file_list().item(i);
+        const proto::FileList::Item& item = reply.file_list().item(i);
+        std::string item_path = path + '/' + item.name();
 
-        pending_tasks_.push_back(
-            FileRemoveTask(path + QString::fromStdString(item.name()),
-                           item.is_directory()));
+        pending_tasks_.emplace_back(std::move(item_path), item.is_directory());
     }
 
-    processNextPendingTask();
+    doPendingTasks();
 }
 
-void FileRemoveQueueBuilder::processNextPendingTask()
+void FileRemoveQueueBuilder::doPendingTasks()
 {
-    if (pending_tasks_.isEmpty())
+    while (!pending_tasks_.empty())
     {
-        emit finished();
-        return;
+        tasks_.emplace_front(std::move(pending_tasks_.front()));
+        pending_tasks_.pop_front();
+
+        if (tasks_.front().isDirectory())
+        {
+            task_consumer_proxy_->doTask(task_factory_->fileList(tasks_.front().path()));
+            return;
+        }
     }
 
-    tasks_.push_front(pending_tasks_.front());
-    pending_tasks_.pop_front();
-
-    const FileRemoveTask& current = tasks_.front();
-    if (!current.isDirectory())
-    {
-        processNextPendingTask();
-        return;
-    }
-
-    emit request(FileRequest::fileListRequest(this, current.path(), kReplySlot));
+    callback_(proto::FILE_ERROR_SUCCESS);
 }
 
-void FileRemoveQueueBuilder::processError(const QString& message)
+void FileRemoveQueueBuilder::onAborted(proto::FileError error_code)
 {
+    pending_tasks_.clear();
     tasks_.clear();
 
-    emit error(message);
-    emit finished();
+    callback_(error_code);
 }
 
-} // namespace aspia
+} // namespace client

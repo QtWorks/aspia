@@ -1,114 +1,146 @@
 //
-// PROJECT:         Aspia
-// FILE:            codec/cursor_decoder.cc
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
 #include "codec/cursor_decoder.h"
 
-#include <QDebug>
+#include "base/logging.h"
+#include "desktop/mouse_cursor.h"
+#include "proto/desktop.pb.h"
 
-namespace aspia {
+namespace codec {
 
-bool CursorDecoder::decompressCursor(const proto::desktop::CursorShape& cursor_shape,
-                                     quint8* image)
+namespace {
+
+constexpr size_t kMinCacheSize = 2;
+constexpr size_t kMaxCacheSize = 31;
+
+} // namespace
+
+CursorDecoder::CursorDecoder()
+    : stream_(ZSTD_createDStream())
 {
-    const quint8* src = reinterpret_cast<const quint8*>(cursor_shape.data().data());
-    const size_t src_size = cursor_shape.data().size();
-    const size_t row_size = cursor_shape.width() * sizeof(quint32);
+    // Nothing
+}
 
-    // Consume all the data in the message.
-    bool decompress_again = true;
-    size_t used = 0;
+CursorDecoder::~CursorDecoder() = default;
 
-    int row_y = 0;
-    size_t row_pos = 0;
+base::ByteArray CursorDecoder::decompressCursor(const proto::CursorShape& cursor_shape)
+{
+    const std::string& data = cursor_shape.data();
 
-    while (decompress_again && used < src_size)
+    if (data.empty())
+        return base::ByteArray();
+
+    base::ByteArray image;
+    image.resize(cursor_shape.width() * cursor_shape.height() * sizeof(uint32_t));
+
+    size_t ret = ZSTD_initDStream(stream_.get());
+    DCHECK(!ZSTD_isError(ret)) << ZSTD_getErrorName(ret);
+
+    ZSTD_inBuffer input = { data.data(), data.size(), 0 };
+    ZSTD_outBuffer output = { image.data(), image.size(), 0 };
+
+    while (input.pos < input.size)
     {
-        if (row_y > cursor_shape.height() - 1)
+        ret = ZSTD_decompressStream(stream_.get(), &output, &input);
+        if (ZSTD_isError(ret))
         {
-            qWarning("Too much data is received for the given rectangle");
-            return false;
-        }
-
-        size_t written = 0;
-        size_t consumed = 0;
-
-        decompress_again = decompressor_.process(src + used,
-                                                 src_size - used,
-                                                 image + row_pos,
-                                                 row_size - row_pos,
-                                                 &consumed,
-                                                 &written);
-        used += consumed;
-        row_pos += written;
-
-        if (row_pos == row_size)
-        {
-            ++row_y;
-            row_pos = 0;
-            image += row_size;
+            LOG(LS_ERROR) << "ZSTD_decompressStream failed: " << ZSTD_getErrorName(ret);
+            return base::ByteArray();
         }
     }
 
-    decompressor_.reset();
-    return true;
+    return image;
 }
 
-std::shared_ptr<MouseCursor> CursorDecoder::decode(const proto::desktop::CursorShape& cursor_shape)
+std::shared_ptr<desktop::MouseCursor> CursorDecoder::decode(const proto::CursorShape& cursor_shape)
 {
     size_t cache_index;
 
-    if (cursor_shape.flags() & proto::desktop::CursorShape::CACHE)
+    if (cursor_shape.flags() & proto::CursorShape::CACHE)
     {
+        if (!cache_size_.has_value())
+        {
+            LOG(LS_ERROR) << "Host did not send cache reset command";
+            return nullptr;
+        }
+
         // Bits 0-4 contain the cursor position in the cache.
         cache_index = cursor_shape.flags() & 0x1F;
     }
     else
     {
-        QSize size(cursor_shape.width(), cursor_shape.height());
+        desktop::Size size(cursor_shape.width(), cursor_shape.height());
+        desktop::Point hotspot(cursor_shape.hotspot_x(), cursor_shape.hotspot_y());
 
-        if (size.width()  <= 0 || size.width()  > (std::numeric_limits<qint16>::max() / 2) ||
-            size.height() <= 0 || size.height() > (std::numeric_limits<qint16>::max() / 2))
+        if (size.width()  <= 0 || size.width()  > (std::numeric_limits<int16_t>::max() / 2) ||
+            size.height() <= 0 || size.height() > (std::numeric_limits<int16_t>::max() / 2))
         {
-            qWarning() << "Cursor dimensions are out of bounds for SetCursor: "
-                       << size.width() << "x" << size.height();
+            LOG(LS_ERROR) << "Cursor dimensions are out of bounds for SetCursor: "
+                          << size.width() << "x" << size.height();
             return nullptr;
         }
 
-        size_t image_size = size.width() * size.height() * sizeof(quint32);
-        std::unique_ptr<quint8[]> image = std::make_unique<quint8[]>(image_size);
-
-        if (!decompressCursor(cursor_shape, image.get()))
+        base::ByteArray image = decompressCursor(cursor_shape);
+        if (image.empty())
             return nullptr;
 
-        std::unique_ptr<MouseCursor> mouse_cursor =
-            MouseCursor::create(std::move(image),
-                                size,
-                                QPoint(cursor_shape.hotspot_x(), cursor_shape.hotspot_y()));
+        std::unique_ptr<desktop::MouseCursor> mouse_cursor =
+            std::make_unique<desktop::MouseCursor>(std::move(image), size, hotspot);
 
-        if (cursor_shape.flags() & proto::desktop::CursorShape::RESET_CACHE)
+        if (cursor_shape.flags() & proto::CursorShape::RESET_CACHE)
         {
             size_t cache_size = cursor_shape.flags() & 0x1F;
 
-            if (!MouseCursorCache::isValidCacheSize(cache_size))
+            if (cache_size < kMinCacheSize || cache_size > kMaxCacheSize)
                 return nullptr;
 
-            cache_ = std::make_unique<MouseCursorCache>(cache_size);
+            cache_size_.emplace(cache_size);
+            cache_.reserve(cache_size);
+            cache_.clear();
         }
 
-        if (!cache_)
+        if (!cache_size_.has_value())
         {
-            qWarning("Host did not send cache reset command");
+            LOG(LS_ERROR) << "Host did not send cache reset command";
             return nullptr;
         }
 
-        cache_index = cache_->add(std::move(mouse_cursor));
+        // Add the cursor to the end of the list.
+        cache_.emplace_back(std::move(mouse_cursor));
+
+        // If the current cache size exceeds the maximum cache size.
+        if (cache_.size() > cache_size_.value())
+        {
+            // Delete the first element in the cache (the oldest one).
+            cache_.erase(cache_.begin());
+        }
+
+        cache_index = cache_.size() - 1;
     }
 
-    return cache_->Get(cache_index);
+    if (cache_index >= cache_.size())
+    {
+        LOG(LS_ERROR) << "Invalid cache index: " << cache_index;
+        return nullptr;
+    }
+
+    return cache_.at(cache_index);
 }
 
-} // namespace aspia
+} // namespace codec

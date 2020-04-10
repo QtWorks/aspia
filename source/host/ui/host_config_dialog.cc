@@ -1,231 +1,102 @@
 //
-// PROJECT:         Aspia
-// FILE:            host/ui/host_config_dialog.cc
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
 #include "host/ui/host_config_dialog.h"
 
-#include <QDebug>
-#include <QDir>
+#include "base/logging.h"
+#include "base/files/base_paths.h"
+#include "base/win/service_controller.h"
+#include "build/build_config.h"
+#include "common/ui/about_dialog.h"
+#include "host/ui/user_dialog.h"
+#include "host/ui/user_tree_item.h"
+#include "host/ui/user_settings.h"
+#include "host/ui/settings_util.h"
+#include "host/win/service_constants.h"
+#include "host/system_settings.h"
+#include "qt_base/qt_xml_settings.h"
+#include "updater/update_dialog.h"
+
+#include <QFileDialog>
 #include <QMenu>
 #include <QMessageBox>
 #include <QTranslator>
 
-#include "base/service_controller.h"
-#include "host/ui/user_dialog.h"
-#include "host/ui/user_tree_item.h"
-#include "host/win/host_service.h"
-#include "host/host_settings.h"
+namespace host {
 
-namespace aspia {
-
-namespace {
-
-const char kHostServiceFileName[] = "aspia_host_service.exe";
-
-QHash<QString, QStringList> createLocaleList()
+ConfigDialog::ConfigDialog(QWidget* parent)
+    : QDialog(parent)
 {
-    QString translations_dir =
-        QApplication::applicationDirPath() + QStringLiteral("/translations/");
-
-    QStringList qm_file_list =
-        QDir(translations_dir).entryList(QStringList() << QStringLiteral("*.qm"));
-
-    QRegExp regexp(QStringLiteral("([a-zA-Z0-9-_]+)_([^.]*).qm"));
-    QHash<QString, QStringList> locale_list;
-
-    for (const auto& qm_file : qm_file_list)
-    {
-        if (regexp.exactMatch(qm_file))
-        {
-            QString locale_name = regexp.cap(2);
-
-            if (locale_list.contains(locale_name))
-                locale_list[locale_name].push_back(qm_file);
-            else
-                locale_list.insert(locale_name, QStringList() << qm_file);
-        }
-    }
-
-    return locale_list;
-}
-
-} // namespace
-
-HostConfigDialog::HostConfigDialog(QWidget* parent)
-    : QDialog(parent),
-      locale_list_(createLocaleList())
-{
-    HostSettings settings;
-
-    QString current_locale = settings.locale();
-
-    if (locale_list_.constFind(current_locale) == locale_list_.constEnd())
-    {
-        current_locale = HostSettings::defaultLocale();
-        settings.setLocale(current_locale);
-    }
-
-    installTranslators(current_locale);
     ui.setupUi(this);
-    createLanguageList(current_locale);
 
-    connect(ui.combobox_language, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            [this](int /* index */)
+    connect(ui.spinbox_port, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, &ConfigDialog::onConfigChanged);
+
+    connect(ui.checkbox_use_custom_server, &QCheckBox::toggled, [this](bool checked)
     {
         setConfigChanged(true);
+
+        ui.edit_update_server->setEnabled(checked);
+
+        if (!checked)
+            ui.edit_update_server->setText(DEFAULT_UPDATE_SERVER);
     });
 
-    connect(ui.spinbox_port, QOverload<int>::of(&QSpinBox::valueChanged), [this](int /* value */)
+    connect(ui.edit_update_server, &QLineEdit::textEdited,
+            this, &ConfigDialog::onConfigChanged);
+
+    connect(ui.button_check_updates, &QPushButton::released, [this]()
     {
-        setConfigChanged(true);
+        updater::UpdateDialog(
+            QString::fromStdString(SystemSettings().updateServer()), "host", this).exec();
     });
-
-    connect(ui.pushbutton_service_install_remove, &QPushButton::pressed,
-            this, &HostConfigDialog::onServiceInstallRemove);
-
-    connect(ui.pushbutton_service_start_stop, &QPushButton::pressed,
-            this, &HostConfigDialog::onServiceStartStop);
 
     connect(ui.tree_users, &QTreeWidget::customContextMenuRequested,
-            this, &HostConfigDialog::onUserContextMenu);
+            this, &ConfigDialog::onUserContextMenu);
 
     connect(ui.tree_users, &QTreeWidget::currentItemChanged,
-            this, &HostConfigDialog::onCurrentUserChanged);
+            this, &ConfigDialog::onCurrentUserChanged);
 
     connect(ui.tree_users, &QTreeWidget::itemDoubleClicked,
-            [this](QTreeWidgetItem* /* item */, int /* column */)
-    {
-        onModifyUser();
-    });
+            this, &ConfigDialog::onModifyUser);
 
-    connect(ui.action_add, &QAction::triggered, this, &HostConfigDialog::onAddUser);
-    connect(ui.action_modify, &QAction::triggered, this, &HostConfigDialog::onModifyUser);
-    connect(ui.action_delete, &QAction::triggered, this, &HostConfigDialog::onDeleteUser);
-    connect(ui.button_add, &QPushButton::pressed, this, &HostConfigDialog::onAddUser);
-    connect(ui.button_modify, &QPushButton::pressed, this, &HostConfigDialog::onModifyUser);
-    connect(ui.button_delete, &QPushButton::pressed, this, &HostConfigDialog::onDeleteUser);
+    connect(ui.action_add, &QAction::triggered, this, &ConfigDialog::onAddUser);
+    connect(ui.action_modify, &QAction::triggered, this, &ConfigDialog::onModifyUser);
+    connect(ui.action_delete, &QAction::triggered, this, &ConfigDialog::onDeleteUser);
+    connect(ui.button_add, &QPushButton::released, this, &ConfigDialog::onAddUser);
+    connect(ui.button_modify, &QPushButton::released, this, &ConfigDialog::onModifyUser);
+    connect(ui.button_delete, &QPushButton::released, this, &ConfigDialog::onDeleteUser);
+
+    connect(ui.button_service_install_remove, &QPushButton::released,
+            this, &ConfigDialog::onServiceInstallRemove);
+    connect(ui.button_service_start_stop, &QPushButton::released,
+            this, &ConfigDialog::onServiceStartStop);
+
+    connect(ui.button_import, &QPushButton::released, this, &ConfigDialog::onImport);
+    connect(ui.button_export, &QPushButton::released, this, &ConfigDialog::onExport);
 
     connect(ui.button_box, &QDialogButtonBox::clicked,
-            this, &HostConfigDialog::onButtonBoxClicked);
+            this, &ConfigDialog::onButtonBoxClicked);
 
-    user_list_ = settings.userList();
-
-    reloadServiceStatus();
-    reloadUserList();
-
-    ui.spinbox_port->setValue(settings.tcpPort());
-
-    setConfigChanged(false);
+    reloadAll();
 }
 
-HostConfigDialog::~HostConfigDialog()
-{
-    removeTranslators();
-}
-
-void HostConfigDialog::onServiceInstallRemove()
-{
-    switch (service_status_)
-    {
-        case ServiceStatus::NotInstalled:
-        {
-            HostService host_service;
-
-            QString file_path =
-                QCoreApplication::applicationDirPath() + QLatin1Char('/') + kHostServiceFileName;
-
-            ServiceController controller =
-                ServiceController::install(host_service.serviceName(),
-                                           host_service.serviceDisplayName(),
-                                           file_path);
-            if (controller.isValid())
-            {
-                controller.setDescription(host_service.serviceDescription());
-            }
-            else
-            {
-                QMessageBox::warning(this,
-                                     tr("Warning"),
-                                     tr("The service could not be installed."),
-                                     QMessageBox::Ok);
-            }
-        }
-        break;
-
-        case ServiceStatus::Started:
-        case ServiceStatus::Stopped:
-        {
-            HostService host_service;
-
-            ServiceController controller = ServiceController::open(host_service.serviceName());
-            if (controller.isValid())
-            {
-                if (controller.isRunning())
-                    controller.stop();
-
-                if (controller.remove())
-                    break;
-            }
-
-            QMessageBox::warning(this,
-                                 tr("Warning"),
-                                 tr("The service could not be removed."),
-                                 QMessageBox::Ok);
-        }
-        break;
-
-        default:
-            break;
-    }
-
-    reloadServiceStatus();
-}
-
-void HostConfigDialog::onServiceStartStop()
-{
-    switch (service_status_)
-    {
-        case ServiceStatus::Started:
-        {
-            HostService host_service;
-
-            ServiceController controller = ServiceController::open(host_service.serviceName());
-            if (!controller.isValid() || !controller.stop())
-            {
-                QMessageBox::warning(this,
-                                     tr("Warning"),
-                                     tr("The service could not be stopped."),
-                                     QMessageBox::Ok);
-            }
-        }
-        break;
-
-        case ServiceStatus::Stopped:
-        {
-            HostService host_service;
-
-            ServiceController controller = ServiceController::open(host_service.serviceName());
-            if (!controller.isValid() || !controller.start())
-            {
-                QMessageBox::warning(this,
-                                     tr("Warning"),
-                                     tr("The service could not be started."),
-                                     QMessageBox::Ok);
-            }
-        }
-        break;
-
-        default:
-            break;
-    }
-
-    reloadServiceStatus();
-}
-
-void HostConfigDialog::onUserContextMenu(const QPoint& point)
+void ConfigDialog::onUserContextMenu(const QPoint& point)
 {
     QMenu menu;
 
@@ -240,10 +111,10 @@ void HostConfigDialog::onUserContextMenu(const QPoint& point)
     }
 
     menu.addAction(ui.action_add);
-    menu.exec(ui.tree_users->mapToGlobal(point));
+    menu.exec(ui.tree_users->viewport()->mapToGlobal(point));
 }
 
-void HostConfigDialog::onCurrentUserChanged(
+void ConfigDialog::onCurrentUserChanged(
     QTreeWidgetItem* /* current */, QTreeWidgetItem* /* previous */)
 {
     ui.button_modify->setEnabled(true);
@@ -253,80 +124,120 @@ void HostConfigDialog::onCurrentUserChanged(
     ui.action_delete->setEnabled(true);
 }
 
-void HostConfigDialog::onAddUser()
+void ConfigDialog::onAddUser()
 {
-    User user;
-    user.setFlags(User::FLAG_ENABLED);
+    QStringList exist_names;
 
-    if (UserDialog(&user_list_, &user, this).exec() == QDialog::Accepted)
+    for (int i = 0; i < ui.tree_users->topLevelItemCount(); ++i)
+        exist_names.append(ui.tree_users->topLevelItem(i)->text(0));
+
+    UserDialog dialog(net::ServerUser(), exist_names, this);
+    if (dialog.exec() == QDialog::Accepted)
     {
-        user_list_.push_back(user);
+        ui.tree_users->addTopLevelItem(new UserTreeItem(dialog.user()));
         setConfigChanged(true);
-        reloadUserList();
     }
 }
 
-void HostConfigDialog::onModifyUser()
+void ConfigDialog::onModifyUser()
 {
-    UserTreeItem* user_item = dynamic_cast<UserTreeItem*>(ui.tree_users->currentItem());
-    if (!user_item)
+    UserTreeItem* current_item = static_cast<UserTreeItem*>(ui.tree_users->currentItem());
+    if (!current_item)
         return;
 
-    if (UserDialog(&user_list_, user_item->user(), this).exec() == QDialog::Accepted)
+    QString current_name = current_item->text(0);
+    QStringList exist_names;
+
+    for (int i = 0; i < ui.tree_users->topLevelItemCount(); ++i)
     {
+        QString name = ui.tree_users->topLevelItem(i)->text(0);
+        if (name.compare(current_name, Qt::CaseInsensitive) != 0)
+            exist_names.append(name);
+    }
+
+    UserDialog dialog(current_item->user(), exist_names, this);
+    if (dialog.exec() == QDialog::Accepted)
+    {
+        current_item->setUser(dialog.user());
         setConfigChanged(true);
-        reloadUserList();
     }
 }
 
-void HostConfigDialog::onDeleteUser()
+void ConfigDialog::onDeleteUser()
 {
-    UserTreeItem* user_item = dynamic_cast<UserTreeItem*>(ui.tree_users->currentItem());
+    UserTreeItem* user_item = static_cast<UserTreeItem*>(ui.tree_users->currentItem());
     if (!user_item)
         return;
 
     if (QMessageBox::question(this,
                               tr("Confirmation"),
                               tr("Are you sure you want to delete user \"%1\"?")
-                                  .arg(user_item->user()->name()),
+                                  .arg(user_item->text(0)),
                               QMessageBox::Yes,
                               QMessageBox::No) == QMessageBox::Yes)
     {
-        user_list_.removeAt(user_item->userIndex());
+        delete user_item;
         setConfigChanged(true);
-        reloadUserList();
     }
 }
 
-void HostConfigDialog::onButtonBoxClicked(QAbstractButton* button)
+void ConfigDialog::onServiceInstallRemove()
 {
-    QDialogButtonBox::StandardButton standard_button = ui.button_box->standardButton(button);
-
-    if (isConfigChanged() && (standard_button == QDialogButtonBox::Ok ||
-                              standard_button == QDialogButtonBox::Apply))
+    switch (service_state_)
     {
-        HostSettings settings;
+        case ServiceState::NOT_INSTALLED:
+            installService();
+            break;
 
-        if (!settings.isWritable())
+        case ServiceState::NOT_STARTED:
+        case ServiceState::STARTED:
         {
-            QString message =
-                tr("The configuration can not be written. "
-                   "Make sure that you have sufficient rights to write.");
+            if (service_state_ == ServiceState::STARTED)
+            {
+                if (!stopService())
+                    break;
+            }
 
-            QMessageBox::warning(this, tr("Warning"), message, QMessageBox::Ok);
-            return;
+            removeService();
         }
+        break;
 
-        QString new_locale = ui.combobox_language->currentData().toString();
+        default:
+            break;
+    }
 
-        if (standard_button == QDialogButtonBox::Apply)
-            retranslateUi(new_locale);
+    reloadServiceStatus();
+}
 
-        settings.setLocale(new_locale);
-        settings.setTcpPort(ui.spinbox_port->value());
-        settings.setUserList(user_list_);
+void ConfigDialog::onServiceStartStop()
+{
+    switch (service_state_)
+    {
+        case ServiceState::NOT_STARTED:
+            startService();
+            break;
 
-        if (service_status_ == ServiceStatus::Started)
+        case ServiceState::STARTED:
+            stopService();
+            break;
+
+        default:
+            break;
+    }
+
+    reloadServiceStatus();
+}
+
+void ConfigDialog::onImport()
+{
+    QString file_path =
+        QFileDialog::getOpenFileName(this, tr("Import"), QString(), tr("XML-files (*.xml)"));
+    if (file_path.isEmpty())
+        return;
+
+    if (SettingsUtil::importFromFile(file_path.toStdU16String(), false, this))
+    {
+        if (isServiceStarted())
         {
             QString message =
                 tr("Service configuration changed. "
@@ -339,17 +250,82 @@ void HostConfigDialog::onButtonBoxClicked(QAbstractButton* button)
                                       QMessageBox::Yes,
                                       QMessageBox::No) == QMessageBox::Yes)
             {
-                if (!restartService())
-                {
-                    QMessageBox::warning(this,
-                                         tr("Warning"),
-                                         tr("Could not restart the service."),
-                                         QMessageBox::Ok);
-                }
+                restartService();
             }
         }
 
+        reloadAll();
+    }
+}
+
+void ConfigDialog::onExport()
+{
+    QString file_path =
+        QFileDialog::getSaveFileName(this, tr("Export"), QString(), tr("XML-files (*.xml)"));
+    if (file_path.isEmpty())
+        return;
+
+    SettingsUtil::exportToFile(file_path.toStdU16String(), false, this);
+}
+
+void ConfigDialog::onButtonBoxClicked(QAbstractButton* button)
+{
+    QDialogButtonBox::StandardButton standard_button = ui.button_box->standardButton(button);
+
+    if (isConfigChanged() && (standard_button == QDialogButtonBox::Ok ||
+                              standard_button == QDialogButtonBox::Apply))
+    {
+        SystemSettings settings;
+
+        if (!settings.isWritable())
+        {
+            QString message =
+                tr("The configuration can not be written. "
+                   "Make sure that you have sufficient rights to write.");
+
+            QMessageBox::warning(this, tr("Warning"), message, QMessageBox::Ok);
+            return;
+        }
+
+        bool service_restart_required = false;
+
+        // Now we have only one parameter when changing which requires restarting the service.
+        if (isServiceStarted() && settings.tcpPort() != ui.spinbox_port->value())
+        {
+            QString message =
+                tr("Service configuration changed. "
+                   "For the changes to take effect, you must restart the service. "
+                   "Restart the service now?");
+
+            if (QMessageBox::question(this,
+                                      tr("Confirmation"),
+                                      message,
+                                      QMessageBox::Yes,
+                                      QMessageBox::No) == QMessageBox::Yes)
+            {
+                service_restart_required = true;
+            }
+        }
+
+        net::ServerUserList user_list;
+
+        for (int i = 0; i < ui.tree_users->topLevelItemCount(); ++i)
+        {
+            UserTreeItem* user_tree_item =
+                static_cast<UserTreeItem*>(ui.tree_users->topLevelItem(i));
+
+            user_list.add(user_tree_item->user());
+        }
+
+        // Update the parameters.
+        settings.setTcpPort(ui.spinbox_port->value());
+        settings.setUserList(user_list);
+        settings.setUpdateServer(ui.edit_update_server->text().toStdString());
+
         setConfigChanged(false);
+
+        if (service_restart_required)
+            restartService();
     }
 
     if (standard_button == QDialogButtonBox::Apply)
@@ -368,116 +344,52 @@ void HostConfigDialog::onButtonBoxClicked(QAbstractButton* button)
     close();
 }
 
-void HostConfigDialog::installTranslators(const QString& locale)
-{
-    QString translations_dir =
-        QApplication::applicationDirPath() + QStringLiteral("/translations/");
-
-    QStringList qm_file_list = locale_list_[locale];
-
-    for (const auto& qm_file : qm_file_list)
-    {
-        QString qm_file_path = translations_dir + qm_file;
-
-        QTranslator* translator = new QTranslator();
-
-        if (!translator->load(qm_file_path))
-        {
-            qWarning() << "Translation file not loaded: " << qm_file_path;
-            delete translator;
-        }
-        else
-        {
-            QApplication::installTranslator(translator);
-            translator_list_.push_back(translator);
-        }
-    }
-}
-
-void HostConfigDialog::removeTranslators()
-{
-    for (auto translator : translator_list_)
-    {
-        QApplication::removeTranslator(translator);
-        delete translator;
-    }
-
-    translator_list_.clear();
-}
-
-void HostConfigDialog::createLanguageList(const QString& current_locale)
-{
-    QHashIterator<QString, QStringList> iter(locale_list_);
-
-    QStringList locale_list;
-
-    while (iter.hasNext())
-    {
-        iter.next();
-        locale_list.push_back(iter.key());
-    }
-
-    if (!locale_list_.contains(QStringLiteral("en")))
-        locale_list.push_back(QStringLiteral("en"));
-
-    std::sort(locale_list.begin(), locale_list.end(),
-              [](const QString& a, const QString& b)
-    {
-        return QString::compare(QLocale::languageToString(QLocale(a).language()),
-                                QLocale::languageToString(QLocale(b).language()),
-                                Qt::CaseInsensitive) < 0;
-    });
-
-    for (const auto& locale : locale_list)
-    {
-        QString language = QLocale::languageToString(QLocale(locale).language());
-
-        ui.combobox_language->addItem(language, locale);
-
-        if (current_locale == locale)
-            ui.combobox_language->setCurrentText(language);
-    }
-}
-
-void HostConfigDialog::retranslateUi(const QString& locale)
-{
-    removeTranslators();
-    installTranslators(locale);
-    ui.retranslateUi(this);
-    reloadServiceStatus();
-}
-
-void HostConfigDialog::setConfigChanged(bool changed)
+void ConfigDialog::setConfigChanged(bool changed)
 {
     QPushButton* apply_button = ui.button_box->button(QDialogButtonBox::Apply);
     if (!apply_button)
     {
-        qFatal("Button not found");
+        DLOG(LS_FATAL) << "Button not found";
         return;
     }
 
     apply_button->setEnabled(changed);
 }
 
-bool HostConfigDialog::isConfigChanged() const
+bool ConfigDialog::isConfigChanged() const
 {
     QPushButton* apply_button = ui.button_box->button(QDialogButtonBox::Apply);
     if (!apply_button)
     {
-        qFatal("Button not found");
+        DLOG(LS_FATAL) << "Button not found";
         return false;
     }
 
     return apply_button->isEnabled();
 }
 
-void HostConfigDialog::reloadUserList()
+void ConfigDialog::reloadAll()
 {
-    for (int i = ui.tree_users->topLevelItemCount() - 1; i >= 0; --i)
-        delete ui.tree_users->takeTopLevelItem(i);
+    SystemSettings settings;
 
-    for (int i = 0; i < user_list_.size(); ++i)
-        ui.tree_users->addTopLevelItem(new UserTreeItem(i, &user_list_[i]));
+    reloadServiceStatus();
+    reloadUserList(settings.userList());
+
+    ui.spinbox_port->setValue(settings.tcpPort());
+    ui.checkbox_use_custom_server->setChecked(settings.updateServer() != DEFAULT_UPDATE_SERVER);
+    ui.edit_update_server->setText(QString::fromStdString(settings.updateServer()));
+
+    ui.edit_update_server->setEnabled(ui.checkbox_use_custom_server->isChecked());
+
+    setConfigChanged(false);
+}
+
+void ConfigDialog::reloadUserList(const net::ServerUserList& user_list)
+{
+    ui.tree_users->clear();
+
+    for (net::ServerUserList::Iterator it(user_list); !it.isAtEnd(); it.advance())
+        ui.tree_users->addTopLevelItem(new UserTreeItem(it.user()));
 
     ui.button_modify->setEnabled(false);
     ui.button_delete->setEnabled(false);
@@ -486,63 +398,167 @@ void HostConfigDialog::reloadUserList()
     ui.action_delete->setEnabled(false);
 }
 
-void HostConfigDialog::reloadServiceStatus()
+void ConfigDialog::reloadServiceStatus()
 {
-    HostService host_service;
+    ui.button_service_install_remove->setEnabled(true);
+    ui.button_service_start_stop->setEnabled(true);
 
-    if (ServiceController::isInstalled(host_service.serviceName()))
+    QString state;
+
+    if (base::win::ServiceController::isInstalled(kHostServiceName))
     {
-        ui.pushbutton_service_install_remove->setText(tr("Remove"));
+        ui.button_service_install_remove->setText(tr("Remove"));
 
-        ServiceController controller = ServiceController::open(host_service.serviceName());
+        base::win::ServiceController controller =
+            base::win::ServiceController::open(kHostServiceName);
         if (controller.isValid())
         {
-            ui.pushbutton_service_start_stop->setVisible(true);
-
             if (controller.isRunning())
             {
-                service_status_ = ServiceStatus::Started;
-
-                ui.label_service_status->setText(tr("Started"));
-                ui.pushbutton_service_start_stop->setText(tr("Stop"));
+                service_state_ = ServiceState::STARTED;
+                state = tr("Started");
+                ui.button_service_start_stop->setText(tr("Stop"));
             }
             else
             {
-                service_status_ = ServiceStatus::Stopped;
-
-                ui.label_service_status->setText(tr("Stopped"));
-                ui.pushbutton_service_start_stop->setText(tr("Start"));
+                service_state_ = ServiceState::NOT_STARTED;
+                state = tr("Not started");
+                ui.button_service_start_stop->setText(tr("Start"));
             }
         }
         else
         {
-            service_status_ = ServiceStatus::Unknown;
+            service_state_ = ServiceState::ACCESS_DENIED;
+            state = tr("Installed");
+            ui.button_service_start_stop->setText(tr("Start"));
 
-            ui.label_service_status->setText(tr("Unknown"));
-            ui.pushbutton_service_start_stop->setVisible(false);
+            // The service is installed, but there is no access to management.
+            ui.button_service_install_remove->setEnabled(false);
+            ui.button_service_start_stop->setEnabled(false);
         }
     }
     else
     {
-        service_status_ = ServiceStatus::NotInstalled;
+        service_state_ = ServiceState::NOT_INSTALLED;
+        state = tr("Not installed");
 
-        ui.pushbutton_service_install_remove->setText(tr("Install"));
-        ui.label_service_status->setText(tr("Not Installed"));
-        ui.pushbutton_service_start_stop->setVisible(false);
+        ui.button_service_install_remove->setText(tr("Install"));
+        ui.button_service_start_stop->setText(tr("Start"));
+        ui.button_service_start_stop->setEnabled(false);
     }
+
+    ui.label_service_status->setText(tr("Current state: %1").arg(state));
 }
 
-bool HostConfigDialog::restartService()
+bool ConfigDialog::isServiceStarted()
 {
-    HostService host_service;
+    base::win::ServiceController controller = base::win::ServiceController::open(kHostServiceName);
+    if (controller.isValid())
+        return controller.isRunning();
 
-    ServiceController controller = ServiceController::open(host_service.serviceName());
-    if (!controller.isValid())
+    return false;
+}
+
+bool ConfigDialog::installService()
+{
+    std::filesystem::path service_file_path;
+
+    if (!base::BasePaths::currentExecDir(&service_file_path))
         return false;
 
-    controller.stop();
+    service_file_path.append(kHostServiceFileName);
 
-    return controller.start();
+    base::win::ServiceController controller = base::win::ServiceController::install(
+        kHostServiceName, kHostServiceDisplayName, service_file_path);
+    if (!controller.isValid())
+    {
+        QMessageBox::warning(this,
+                             tr("Warning"),
+                             tr("The service could not be installed."),
+                             QMessageBox::Ok);
+        return false;
+    }
+    else
+    {
+        controller.setDependencies({ u"RpcSs", u"Tcpip", u"NDIS", u"AFD" });
+        controller.setDescription(kHostServiceDescription);
+    }
+
+    return true;
 }
 
-} // namespace aspia
+bool ConfigDialog::removeService()
+{
+    if (!base::win::ServiceController::remove(kHostServiceName))
+    {
+        QMessageBox::warning(this,
+                             tr("Warning"),
+                             tr("The service could not be removed."),
+                             QMessageBox::Ok);
+        return false;
+    }
+
+    return true;
+}
+
+bool ConfigDialog::startService()
+{
+    base::win::ServiceController controller = base::win::ServiceController::open(kHostServiceName);
+    if (!controller.isValid())
+    {
+        QMessageBox::warning(this,
+                             tr("Warning"),
+                             tr("Could not access the service."),
+                             QMessageBox::Ok);
+        return false;
+    }
+    else
+    {
+        if (!controller.start())
+        {
+            QMessageBox::warning(this,
+                                 tr("Warning"),
+                                 tr("The service could not be started."),
+                                 QMessageBox::Ok);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool ConfigDialog::stopService()
+{
+    base::win::ServiceController controller = base::win::ServiceController::open(kHostServiceName);
+    if (!controller.isValid())
+    {
+        QMessageBox::warning(this,
+                             tr("Warning"),
+                             tr("Could not access the service."),
+                             QMessageBox::Ok);
+        return false;
+    }
+    else
+    {
+        if (!controller.stop())
+        {
+            QMessageBox::warning(this,
+                                 tr("Warning"),
+                                 tr("The service could not be stopped."),
+                                 QMessageBox::Ok);
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool ConfigDialog::restartService()
+{
+    if (!stopService())
+        return false;
+
+    return startService();
+}
+
+} // namespace host

@@ -1,26 +1,37 @@
 //
-// PROJECT:         Aspia
-// FILE:            console/console_settings.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef _ASPIA_CONSOLE__CONSOLE_SETTINGS_H
-#define _ASPIA_CONSOLE__CONSOLE_SETTINGS_H
+#ifndef CONSOLE__CONSOLE_SETTINGS_H
+#define CONSOLE__CONSOLE_SETTINGS_H
+
+#include "base/macros_magic.h"
+#include "proto/common.pb.h"
 
 #include <QSettings>
 
-#include "protocol/authorization.pb.h"
+namespace console {
 
-namespace aspia {
-
-class ConsoleSettings
+class Settings
 {
 public:
-    ConsoleSettings();
-    ~ConsoleSettings();
+    Settings();
+    ~Settings() = default;
 
-    static QString defaultLocale();
     QString locale() const;
     void setLocale(const QString& locale);
 
@@ -33,21 +44,57 @@ public:
     QByteArray windowState() const;
     void setWindowState(const QByteArray& state);
 
+    QByteArray splitterState() const;
+    void setSplitterState(const QByteArray& state);
+
+    QByteArray columnsState() const;
+    void setColumnsState(const QByteArray& state);
+
+    bool isRecentOpenEnabled() const;
+    void setRecentOpenEnabled(bool enable);
+
+    QStringList recentOpen() const;
+    void setRecentOpen(const QStringList& list);
+
+    QStringList pinnedFiles() const;
+    void setPinnedFiles(const QStringList& list);
+
     bool isToolBarEnabled() const;
     void setToolBarEnabled(bool enable);
 
     bool isStatusBarEnabled() const;
     void setStatusBarEnabled(bool enable);
 
-    proto::auth::SessionType sessionType();
-    void setSessionType(proto::auth::SessionType session_type);
+    bool minimizeToTray() const;
+    void setMinimizeToTray(bool enable);
+
+    bool alwaysShowTrayIcon() const;
+    void setAlwaysShowTrayIcon(bool enable);
+
+    proto::SessionType sessionType() const;
+    void setSessionType(proto::SessionType session_type);
+
+    bool checkUpdates() const;
+    void setCheckUpdates(bool check);
+
+    QString updateServer() const;
+    void setUpdateServer(const QString& server);
+
+    QByteArray computerDialogGeometry() const;
+    void setComputerDialogGeometry(const QByteArray& geometry);
+
+    QByteArray computerDialogState() const;
+    void setComputerDialogState(const QByteArray& state);
+
+    QByteArray computerGroupDialogGeometry() const;
+    void setComputerGroupDialogGeometry(const QByteArray& geometry);
 
 private:
     QSettings settings_;
 
-    Q_DISABLE_COPY(ConsoleSettings)
+    DISALLOW_COPY_AND_ASSIGN(Settings);
 };
 
-} // namespace aspia
+} // namespace console
 
-#endif // _ASPIA_CONSOLE__CONSOLE_SETTINGS_H
+#endif // CONSOLE__CONSOLE_SETTINGS_H

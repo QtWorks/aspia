@@ -1,27 +1,63 @@
 //
-// PROJECT:         Aspia
-// FILE:            console/computer_tree.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
 #include "console/computer_tree.h"
-
-#include <QApplication>
-#include <QMouseEvent>
-
 #include "console/computer_drag.h"
 #include "console/computer_item.h"
 
-namespace aspia {
+#include <QApplication>
+#include <QHeaderView>
+#include <QMenu>
+#include <QMouseEvent>
+#include <QUuid>
+
+namespace console {
+
+namespace {
+
+class ColumnAction : public QAction
+{
+public:
+    ColumnAction(const QString& text, int index, QObject* parent)
+        : QAction(text, parent),
+          index_(index)
+    {
+        setCheckable(true);
+    }
+
+    int columnIndex() const { return index_; }
+
+private:
+    const int index_;
+    DISALLOW_COPY_AND_ASSIGN(ColumnAction);
+};
+
+} // namespace
 
 ComputerTree::ComputerTree(QWidget* parent)
-    : QTreeWidget(parent)
+    : QTreeWidget(parent),
+      mime_type_(QString("application/%1").arg(QUuid::createUuid().toString()))
 {
-    // Nothing
-}
+    header()->setContextMenuPolicy(Qt::CustomContextMenu);
 
-ComputerTree::~ComputerTree() = default;
+    connect(header(), &QHeaderView::customContextMenuRequested,
+            this, &ComputerTree::onHeaderContextMenu);
+}
 
 void ComputerTree::mousePressEvent(QMouseEvent* event)
 {
@@ -70,7 +106,7 @@ void ComputerTree::startDrag(Qt::DropActions supported_actions)
     {
         ComputerDrag* drag = new ComputerDrag(this);
 
-        drag->setComputerItem(computer_item);
+        drag->setComputerItem(computer_item, mime_type_);
 
         QIcon icon = computer_item->icon(0);
         drag->setPixmap(icon.pixmap(icon.actualSize(QSize(16, 16))));
@@ -79,4 +115,23 @@ void ComputerTree::startDrag(Qt::DropActions supported_actions)
     }
 }
 
-} // namespace aspia
+void ComputerTree::onHeaderContextMenu(const QPoint& pos)
+{
+    QMenu menu;
+
+    for (int i = 1; i < header()->count(); ++i)
+    {
+        ColumnAction* action = new ColumnAction(headerItem()->text(i), i, &menu);
+        action->setChecked(!header()->isSectionHidden(i));
+        menu.addAction(action);
+    }
+
+    ColumnAction* action = dynamic_cast<ColumnAction*>(
+        menu.exec(header()->viewport()->mapToGlobal(pos)));
+    if (!action)
+        return;
+
+    header()->setSectionHidden(action->columnIndex(), !action->isChecked());
+}
+
+} // namespace console

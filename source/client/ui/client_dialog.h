@@ -1,17 +1,35 @@
 //
-// PROJECT:         Aspia
-// FILE:            client/ui/client_dialog.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef _ASPIA_CLIENT__UI__CLIENT_DIALOG_H
-#define _ASPIA_CLIENT__UI__CLIENT_DIALOG_H
+#ifndef CLIENT__UI__CLIENT_DIALOG_H
+#define CLIENT__UI__CLIENT_DIALOG_H
 
-#include "protocol/address_book.pb.h"
-#include "ui_client_dialog.h"
+#include "base/macros_magic.h"
+#include "client/client_config.h"
+#include "proto/desktop.pb.h"
 
-namespace aspia {
+#include <QDialog>
+
+namespace Ui {
+class ClientDialog;
+} // namespace Ui
+
+namespace client {
 
 class ClientDialog : public QDialog
 {
@@ -21,22 +39,20 @@ public:
     explicit ClientDialog(QWidget* parent = nullptr);
     ~ClientDialog();
 
-    proto::address_book::Computer computer() const { return computer_; }
-
 private slots:
     void sessionTypeChanged(int item_index);
     void sessionConfigButtonPressed();
     void connectButtonPressed();
 
 private:
-    void setDefaultConfig();
+    std::unique_ptr<Ui::ClientDialog> ui;
 
-    Ui::ClientDialog ui;
-    proto::address_book::Computer computer_;
+    Config config_;
+    proto::DesktopConfig desktop_config_;
 
-    Q_DISABLE_COPY(ClientDialog)
+    DISALLOW_COPY_AND_ASSIGN(ClientDialog);
 };
 
-} // namespace aspia
+} // namespace client
 
-#endif // _ASPIA_CLIENT__UI__CLIENT_DIALOG_H
+#endif // CLIENT__UI__CLIENT_DIALOG_H

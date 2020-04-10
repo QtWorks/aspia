@@ -1,29 +1,50 @@
 //
-// PROJECT:         Aspia
-// FILE:            client/ui/desktop_config_dialog.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef _ASPIA_CLIENT__UI__DESKTOP_CONFIG_DIALOG_H
-#define _ASPIA_CLIENT__UI__DESKTOP_CONFIG_DIALOG_H
+#ifndef CLIENT__UI__DESKTOP_CONFIG_DIALOG_H
+#define CLIENT__UI__DESKTOP_CONFIG_DIALOG_H
 
-#include "protocol/authorization.pb.h"
-#include "protocol/desktop_session.pb.h"
+#include "base/macros_magic.h"
+#include "proto/common.pb.h"
+#include "proto/desktop.pb.h"
 #include "ui_desktop_config_dialog.h"
 
-namespace aspia {
+#include <QDialog>
+
+class QAbstractButton;
+
+namespace client {
 
 class DesktopConfigDialog : public QDialog
 {
     Q_OBJECT
 
 public:
-    DesktopConfigDialog(proto::desktop::Config* config,
-                        quint32 supported_video_encodings,
-                        quint32 supported_features,
+    DesktopConfigDialog(proto::SessionType session_type,
+                        const proto::DesktopConfig& config,
+                        uint32_t video_encodings,
                         QWidget* parent = nullptr);
     ~DesktopConfigDialog();
+
+    const proto::DesktopConfig& config() { return config_; }
+
+signals:
+    void configChanged(const proto::DesktopConfig& config);
 
 private slots:
     void onCodecChanged(int item_index);
@@ -33,13 +54,11 @@ private slots:
 private:
     Ui::DesktopConfigDialog ui;
 
-    proto::desktop::Config* config_;
-    quint32 supported_video_encodings_;
-    quint32 supported_features_;
+    proto::DesktopConfig config_;
 
-    Q_DISABLE_COPY(DesktopConfigDialog)
+    DISALLOW_COPY_AND_ASSIGN(DesktopConfigDialog);
 };
 
-} // namespace aspia
+} // namespace client
 
-#endif // _ASPIA_CLIENT__UI__DESKTOP_CONFIG_DIALOG_H
+#endif // CLIENT__UI__DESKTOP_CONFIG_DIALOG_H

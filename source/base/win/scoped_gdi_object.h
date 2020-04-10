@@ -1,17 +1,29 @@
 //
-// PROJECT:         Aspia
-// FILE:            base/win/scoped_gdi_object.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef _ASPIA_BASE__WIN__SCOPED_GDI_OBJECT_H
-#define _ASPIA_BASE__WIN__SCOPED_GDI_OBJECT_H
+#ifndef BASE__WIN__SCOPED_GDI_OBJECT_H
+#define BASE__WIN__SCOPED_GDI_OBJECT_H
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
+#include "base/macros_magic.h"
 
-namespace aspia {
+#include <Windows.h>
+
+namespace base::win {
 
 // Like ScopedHandle but for GDI objects.
 template<class T, class Traits>
@@ -55,7 +67,7 @@ public:
 private:
     T object_ = nullptr;
 
-    Q_DISABLE_COPY(ScopedGDIObject)
+    DISALLOW_COPY_AND_ASSIGN(ScopedGDIObject);
 };
 
 // The traits class that uses DeleteObject() to close a handle.
@@ -77,6 +89,6 @@ using ScopedHRGN = ScopedGDIObject<HRGN, DeleteObjectTraits<HRGN>>;
 using ScopedHFONT = ScopedGDIObject<HFONT, DeleteObjectTraits<HFONT>>;
 using ScopedHBRUSH = ScopedGDIObject<HBRUSH, DeleteObjectTraits<HBRUSH>>;
 
-} // namespace aspia
+} // namespace base::win
 
-#endif // _ASPIA_BASE__WIN__SCOPED_GDI_OBJECT_H
+#endif // BASE__WIN__SCOPED_GDI_OBJECT_H

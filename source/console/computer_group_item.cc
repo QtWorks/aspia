@@ -1,20 +1,33 @@
 //
-// PROJECT:         Aspia
-// FILE:            console/computer_group_item.cc
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
 #include "console/computer_group_item.h"
 
-namespace aspia {
+#include <QApplication>
+
+namespace console {
 
 ComputerGroupItem::ComputerGroupItem(proto::address_book::ComputerGroup* computer_group,
                                      ComputerGroupItem* parent_item)
     : QTreeWidgetItem(parent_item),
       computer_group_(computer_group)
 {
-    setIcon(0, QIcon(QStringLiteral(":/icon/folder.png")));
+    setIcon(0, QIcon(QStringLiteral(":/img/folder.png")));
     updateItem();
 
     for (int i = 0; i < computer_group_->computer_group_size(); ++i)
@@ -22,8 +35,6 @@ ComputerGroupItem::ComputerGroupItem(proto::address_book::ComputerGroup* compute
         addChild(new ComputerGroupItem(computer_group_->mutable_computer_group(i), this));
     }
 }
-
-ComputerGroupItem::~ComputerGroupItem() = default;
 
 ComputerGroupItem* ComputerGroupItem::addChildComputerGroup(
     proto::address_book::ComputerGroup* computer_group)
@@ -98,12 +109,12 @@ proto::address_book::Computer* ComputerGroupItem::takeChildComputer(
     {
         if (computer_group_->mutable_computer(i) == computer)
         {
-            proto::address_book::Computer* computer = new proto::address_book::Computer();
-            *computer = std::move(*computer_group_->mutable_computer(i));
+            proto::address_book::Computer* new_computer = new proto::address_book::Computer();
+            *new_computer = std::move(*computer_group_->mutable_computer(i));
 
             computer_group_->mutable_computer()->DeleteSubrange(i, 1);
 
-            return computer;
+            return new_computer;
         }
     }
 
@@ -112,7 +123,11 @@ proto::address_book::Computer* ComputerGroupItem::takeChildComputer(
 
 void ComputerGroupItem::updateItem()
 {
-    setText(0, QString::fromStdString(computer_group_->name()));
+    bool has_parent = parent() != nullptr;
+    if (has_parent)
+        setText(0, QString::fromStdString(computer_group_->name()));
+    else
+        setText(0, QApplication::translate("ComputerGroupItem", "Root Group"));
 }
 
 bool ComputerGroupItem::IsExpanded() const
@@ -135,4 +150,4 @@ QList<QTreeWidgetItem*> ComputerGroupItem::ComputerList()
     return list;
 }
 
-} // namespace aspia
+} // namespace console

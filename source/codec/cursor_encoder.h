@@ -1,39 +1,58 @@
 //
-// PROJECT:         Aspia
-// FILE:            codec/cursor_encoder.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef _ASPIA_CODEC__CURSOR_ENCODER_H
-#define _ASPIA_CODEC__CURSOR_ENCODER_H
+#ifndef CODEC__CURSOR_ENCODER_H
+#define CODEC__CURSOR_ENCODER_H
 
-#include <memory>
+#include "base/macros_magic.h"
+#include "codec/scoped_zstd_stream.h"
 
-#include "codec/compressor_zlib.h"
-#include "desktop_capture/mouse_cursor_cache.h"
-#include "protocol/desktop_session.pb.h"
+#include <vector>
 
-namespace aspia {
+namespace desktop {
+class MouseCursor;
+} // namespace desktop
+
+namespace proto {
+class CursorShape;
+} // namespace proto
+
+namespace codec {
 
 class CursorEncoder
 {
 public:
     CursorEncoder();
-    ~CursorEncoder() = default;
+    ~CursorEncoder();
 
-    std::unique_ptr<proto::desktop::CursorShape> encode(std::unique_ptr<MouseCursor> mouse_cursor);
+    bool encode(const desktop::MouseCursor& mouse_cursor,
+                proto::CursorShape* cursor_shape);
 
 private:
-    void compressCursor(proto::desktop::CursorShape* cursor_shape,
-                        const MouseCursor* mouse_cursor);
+    bool compressCursor(const desktop::MouseCursor& mouse_cursor,
+                        proto::CursorShape* cursor_shape);
 
-    CompressorZLIB compressor_;
-    MouseCursorCache cache_;
+    ScopedZstdCStream stream_;
+    std::vector<uint32_t> cache_;
 
-    Q_DISABLE_COPY(CursorEncoder)
+    DISALLOW_COPY_AND_ASSIGN(CursorEncoder);
 };
 
-} // namespace aspia
+} // namespace codec
 
-#endif // _ASPIA_CODEC__CURSOR_ENCODER_H
+#endif // CODEC__CURSOR_ENCODER_H

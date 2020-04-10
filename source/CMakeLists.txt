@@ -1,82 +1,100 @@
 #
-# PROJECT:         Aspia
-# FILE:            CMakeLists.txt
-# LICENSE:         GNU General Public License 3
-# PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+# Aspia Project
+# Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 #
 
-cmake_minimum_required(VERSION 2.8.11)
+cmake_minimum_required(VERSION 3.16.0)
 
-set(CMAKE_SYSTEM_VERSION 7.0 CACHE TYPE INTERNAL FORCE)
-set(CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION 8.1 CACHE TYPE INTERNAL FORCE)
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+option(BUILD_UNIT_TESTS "Build unit tests" ON)
+option(USE_TBB "Using Intel TBB" ON)
 
 set(ASPIA_THIRD_PARTY_DIR "$ENV{ASPIA_THIRD_PARTY_DIR}")
 
 project(aspia)
 
+# Qt configuration.
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 
-set(CMAKE_PREFIX_PATH "${ASPIA_THIRD_PARTY_DIR}/qt")
-find_package(Qt5 REQUIRED Core Gui Network PrintSupport Widgets WinExtras)
+set(CMAKE_PREFIX_PATH "${ASPIA_THIRD_PARTY_DIR}/qt;${ASPIA_THIRD_PARTY_DIR}/protobuf")
+
+find_package(Qt5 REQUIRED Core Gui Network PrintSupport Widgets WinExtras Xml)
 find_package(Qt5LinguistTools)
+find_package(Protobuf REQUIRED)
 
-include(aspia_core.cmake)
+list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
+list(APPEND CMAKE_AUTORCC_OPTIONS -compress 9 -threshold 5)
 
-source_group(base FILES ${SOURCE_BASE})
-source_group(base\\win FILES ${SOURCE_BASE_WIN})
-source_group(client FILES ${SOURCE_CLIENT})
-source_group(client\\ui FILES ${SOURCE_CLIENT_UI})
-source_group(codec FILES ${SOURCE_CODEC})
-source_group(console FILES ${SOURCE_CONSOLE})
-source_group(crypto FILES ${SOURCE_CRYPTO})
-source_group(desktop_capture FILES ${SOURCE_DESKTOP_CAPTURE})
-source_group(desktop_capture\\win FILES ${SOURCE_DESKTOP_CAPTURE_WIN})
-source_group(host FILES ${SOURCE_HOST})
-source_group(host\\ui FILES ${SOURCE_HOST_UI})
-source_group(host\\win FILES ${SOURCE_HOST_WIN})
-source_group(ipc FILES ${SOURCE_IPC})
-source_group(network FILES ${SOURCE_NETWORK})
-source_group(protocol FILES ${SOURCE_PROTOCOL})
-source_group(resources FILES ${SOURCE_RESOURCES})
-source_group("" FILES ${SOURCE})
+# Target version.
+add_definitions(-DNTDDI_VERSION=0x06010000
+                -D_WIN32_WINNT=0x0601
+                -D_WIN32_WINDOWS=_WIN32_WINNT
+                -DWINVER=_WIN32_WINNT
+                -D_WIN32_IE=0x0800
+                -DPSAPI_VERSION=2)
 
-add_definitions(/FI"build_config.h")
+# For Asio.
+add_definitions(-DASIO_STANDALONE
+                -DASIO_NO_DEPRECATED)
 
+# For Qt.
+add_definitions(-DQT_NO_CAST_TO_ASCII
+                -DQT_NO_CAST_FROM_BYTEARRAY
+                -DQT_USE_QSTRINGBUILDER)
+
+# For Windows.
 add_definitions(-D_UNICODE
-                -D_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING
-                -D_CRT_SECURE_NO_WARNINGS
-                -DCORE_IMPLEMENTATION)
+                -DUNICODE
+                -DWIN32_LEAN_AND_MEAN
+                -DNOMINMAX)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /Ob2 /Ot /Oy /GL /MT /MP /arch:SSE2 /fp:fast /wd4146")
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MTd /MP /wd4146")
-set(CMAKE_RC_FLAGS "${CMAKE_RC_FLAGS} /i${THIRD_PARTY_DIR}/wtl/include")
-set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /LTCG /INCREMENTAL:NO /OPT:REF")
-set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /LTCG /INCREMENTAL:NO /OPT:REF")
+if (USE_TBB)
+    add_definitions(-DUSE_TBB)
+endif()
 
-add_library(aspia_core SHARED
-    ${SOURCE_BASE}
-    ${SOURCE_BASE_WIN}
-    ${SOURCE_CLIENT}
-    ${SOURCE_CLIENT_UI}
-    ${SOURCE_CODEC}
-    ${SOURCE_CONSOLE}
-    ${SOURCE_CRYPTO}
-    ${SOURCE_DESKTOP_CAPTURE}
-    ${SOURCE_DESKTOP_CAPTURE_WIN}
-    ${SOURCE_HOST}
-    ${SOURCE_HOST_UI}
-    ${SOURCE_HOST_WIN}
-    ${SOURCE_IPC}
-    ${SOURCE_NETWORK}
-    ${SOURCE_PROTOCOL}
-    ${SOURCE_RESOURCES}
-    ${SOURCE})
+include_directories(
+    ${PROJECT_SOURCE_DIR}
+    ${PROJECT_BINARY_DIR}
+    ${ASPIA_THIRD_PARTY_DIR}/googletest/include
+    ${ASPIA_THIRD_PARTY_DIR}/libvpx/include
+    ${ASPIA_THIRD_PARTY_DIR}/libyuv/include
+    ${ASPIA_THIRD_PARTY_DIR}/openssl/include
+    ${ASPIA_THIRD_PARTY_DIR}/protobuf/include
+    ${ASPIA_THIRD_PARTY_DIR}/tbb/include
+    ${ASPIA_THIRD_PARTY_DIR}/zstd/include
+    third_party/asio)
 
-target_link_libraries(aspia_core
+link_directories(
+    ${ASPIA_THIRD_PARTY_DIR}/googletest/lib
+    ${ASPIA_THIRD_PARTY_DIR}/libvpx/lib
+    ${ASPIA_THIRD_PARTY_DIR}/libyuv/lib
+    ${ASPIA_THIRD_PARTY_DIR}/openssl/lib
+    ${ASPIA_THIRD_PARTY_DIR}/protobuf/lib
+    ${ASPIA_THIRD_PARTY_DIR}/qt/lib
+    ${ASPIA_THIRD_PARTY_DIR}/qt/plugins/platforms
+    ${ASPIA_THIRD_PARTY_DIR}/qt/plugins/printsupport
+    ${ASPIA_THIRD_PARTY_DIR}/qt/plugins/styles
+    ${ASPIA_THIRD_PARTY_DIR}/tbb/lib
+    ${ASPIA_THIRD_PARTY_DIR}/zstd/lib)
+
+set(QT_LIBS
     Qt5::Core
     Qt5::Gui
     Qt5::Network
@@ -84,45 +102,41 @@ target_link_libraries(aspia_core
     Qt5::Widgets
     Qt5::WinMain
     Qt5::WinExtras
+    Qt5::Xml
+    Qt5::QWindowsIntegrationPlugin
+    Qt5::QWindowsVistaStylePlugin
+    Qt5::QWindowsPrinterSupportPlugin
     debug Qt5AccessibilitySupportd
     debug Qt5EventDispatcherSupportd
     debug Qt5FontDatabaseSupportd
     debug Qt5ThemeSupportd
     debug Qt5WindowsUIAutomationSupportd
-    debug libprotobuf-lited
-    debug libsodiumd
-    debug libvpxd
-    debug libyuvd
     debug qtfreetyped
     debug qtharfbuzzd
     debug qtlibpngd
     debug qtpcre2d
-    debug qwindowsd
-    debug qwindowsvistastyled
-    debug zlib-ngd
     optimized Qt5AccessibilitySupport
     optimized Qt5EventDispatcherSupport
     optimized Qt5FontDatabaseSupport
     optimized Qt5ThemeSupport
     optimized Qt5WindowsUIAutomationSupport
-    optimized libprotobuf-lite
-    optimized libsodium
-    optimized libvpx
-    optimized libyuv
     optimized qtfreetype
     optimized qtharfbuzz
     optimized qtlibpng
-    optimized qtpcre2
-    optimized qwindows
-    optimized qwindowsvistastyle
-    optimized zlib-ng
+    optimized qtpcre2)
+
+set(WINDOWS_LIBS
     crypt32
     dwmapi
+    dxgi
+    d3d11
     imm32
     iphlpapi
     mpr
     netapi32
     sas
+    setupapi
+    shlwapi
     userenv
     uxtheme
     version
@@ -130,25 +144,60 @@ target_link_libraries(aspia_core
     ws2_32
     wtsapi32)
 
-add_executable(aspia_console ${PROJECT_SOURCE_DIR}/console/entry_point.cc ${PROJECT_SOURCE_DIR}/console/console.rc)
-set_target_properties(aspia_console PROPERTIES WIN32_EXECUTABLE TRUE)
-target_link_libraries(aspia_console aspia_core)
+set(THIRD_PARTY_LIBS
+    debug vpxmtd
+    debug yuv_debug
+    debug tbb_debug
+    debug zstd_static_debug
+    optimized vpxmt
+    optimized yuv
+    optimized tbb
+    optimized zstd_static
+    ${Protobuf_LITE_LIBRARIES}
+    libcrypto
+    libssl
+    modp_b64
+    x11region)
 
-add_executable(aspia_host_config ${PROJECT_SOURCE_DIR}/host/host_config_entry_point.cc ${PROJECT_SOURCE_DIR}/host/host_config.rc)
-set_target_properties(aspia_host_config PROPERTIES WIN32_EXECUTABLE TRUE)
-set_target_properties(aspia_host_config PROPERTIES LINK_FLAGS "/MANIFEST:NO")
-target_link_libraries(aspia_host_config aspia_core)
+# C++ compliller flags.
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /GL /MP /arch:SSE2")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MP")
 
-add_executable(aspia_host_service ${PROJECT_SOURCE_DIR}/host/win/host_service_entry_point.cc ${PROJECT_SOURCE_DIR}/host/win/host_service.rc)
-target_link_libraries(aspia_host_service aspia_core)
+# C compiller flags.
+set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /GL /MP /arch:SSE2")
+set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /MP")
 
-add_executable(aspia_host ${PROJECT_SOURCE_DIR}/host/win/host_entry_point.cc ${PROJECT_SOURCE_DIR}/host/win/host.rc)
-set_target_properties(aspia_host PROPERTIES WIN32_EXECUTABLE TRUE)
-set_target_properties(aspia_host PROPERTIES LINK_FLAGS "/MANIFEST:NO")
-target_link_libraries(aspia_host aspia_core)
+# Linker flags.
+set(CMAKE_SHARED_LINKER_FLAGS_RELEASE "${CMAKE_SHARED_LINKER_FLAGS_RELEASE} /LTCG /INCREMENTAL:NO /OPT:REF")
+set(CMAKE_STATIC_LINKER_FLAGS_RELEASE "${CMAKE_STATIC_LINKER_FLAGS_RELEASE} /LTCG")
+set(CMAKE_EXE_LINKER_FLAGS_RELEASE "${CMAKE_EXE_LINKER_FLAGS_RELEASE} /LTCG /INCREMENTAL:NO /OPT:REF")
 
-add_executable(aspia_host_notifier ${PROJECT_SOURCE_DIR}/host/host_notifier_entry_point.cc ${PROJECT_SOURCE_DIR}/host/host_notifier.rc)
-set_target_properties(aspia_host_notifier PROPERTIES WIN32_EXECUTABLE TRUE)
-target_link_libraries(aspia_host_notifier aspia_core)
+# Static runtime library.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-add_subdirectory(translations)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
+# If the build of unit tests is enabled.
+if (BUILD_UNIT_TESTS)
+    enable_testing()
+endif()
+
+add_subdirectory(base)
+add_subdirectory(client)
+add_subdirectory(codec)
+add_subdirectory(common)
+add_subdirectory(console)
+add_subdirectory(crypto)
+add_subdirectory(desktop)
+add_subdirectory(host)
+add_subdirectory(ipc)
+add_subdirectory(net)
+add_subdirectory(proto)
+add_subdirectory(proxy)
+add_subdirectory(qt_base)
+add_subdirectory(router)
+add_subdirectory(third_party)
+add_subdirectory(updater)

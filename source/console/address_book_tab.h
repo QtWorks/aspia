@@ -1,20 +1,30 @@
 //
-// PROJECT:         Aspia
-// FILE:            console/address_book_tab.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef _ASPIA_CONSOLE__ADDRESS_BOOK_TAB_H
-#define _ASPIA_CONSOLE__ADDRESS_BOOK_TAB_H
+#ifndef CONSOLE__ADDRESS_BOOK_TAB_H
+#define CONSOLE__ADDRESS_BOOK_TAB_H
 
-#include <QWidget>
-
+#include "base/macros_magic.h"
 #include "console/console_tab.h"
-#include "protocol/address_book.pb.h"
+#include "proto/address_book.pb.h"
 #include "ui_address_book_tab.h"
 
-namespace aspia {
+namespace console {
 
 class ComputerItem;
 
@@ -29,19 +39,23 @@ public:
     static AddressBookTab* openFromFile(const QString& file_path, QWidget* parent);
 
     QString addressBookName() const;
-    QString addressBookPath() const { return file_path_; }
-    proto::address_book::Computer* currentComputer() const;
+    const QString& filePath() const { return file_path_; }
+    ComputerItem* currentComputer() const;
     proto::address_book::ComputerGroup* currentComputerGroup() const;
     void setChanged(bool changed);
     bool isChanged() const { return is_changed_; }
 
+    AddressBookTab* duplicateTab() const;
+
+    bool save();
+    bool saveAs();
+
     void retranslateUi();
 
 public slots:
-    void save();
-    void saveAs();
     void addComputerGroup();
     void addComputer();
+    void copyComputer();
     void modifyAddressBook();
     void modifyComputerGroup();
     void modifyComputer();
@@ -59,6 +73,7 @@ signals:
 protected:
     // ConsoleTab implementation.
     void showEvent(QShowEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
 
 private slots:
     void onGroupItemClicked(QTreeWidgetItem* item, int column);
@@ -74,28 +89,29 @@ private:
     AddressBookTab(const QString& file_path,
                    proto::address_book::File&& file,
                    proto::address_book::Data&& data,
-                   QByteArray&& key,
+                   std::string&& key,
                    QWidget* parent);
 
     void updateComputerList(ComputerGroupItem* computer_group);
     bool saveToFile(const QString& file_path);
 
+    static QString parentName(ComputerGroupItem* item);
     static void showOpenError(QWidget* parent, const QString& message);
     static void showSaveError(QWidget* parent, const QString& message);
 
     Ui::AddressBookTab ui;
 
     QString file_path_;
-    QByteArray key_;
+    std::string key_;
 
     proto::address_book::File file_;
     proto::address_book::Data data_;
 
     bool is_changed_ = false;
 
-    Q_DISABLE_COPY(AddressBookTab)
+    DISALLOW_COPY_AND_ASSIGN(AddressBookTab);
 };
 
-} // namespace aspia
+} // namespace console
 
-#endif // _ASPIA_CONSOLE__ADDRESS_BOOK_TAB_H
+#endif // CONSOLE__ADDRESS_BOOK_TAB_H

@@ -1,26 +1,35 @@
 //
-// PROJECT:         Aspia
-// FILE:            console/computer_group_item.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef _ASPIA_CONSOLE__COMPUTER_GROUP_ITEM_H
-#define _ASPIA_CONSOLE__COMPUTER_GROUP_ITEM_H
-
-#include <QTreeWidget>
+#ifndef CONSOLE__COMPUTER_GROUP_ITEM_H
+#define CONSOLE__COMPUTER_GROUP_ITEM_H
 
 #include "console/computer_item.h"
-#include "protocol/address_book.pb.h"
+#include "proto/address_book.pb.h"
 
-namespace aspia {
+namespace console {
 
 class ComputerGroupItem : public QTreeWidgetItem
 {
 public:
     ComputerGroupItem(proto::address_book::ComputerGroup* computer_group,
                       ComputerGroupItem* parent_item);
-    virtual ~ComputerGroupItem();
+    virtual ~ComputerGroupItem() = default;
 
     ComputerGroupItem* addChildComputerGroup(proto::address_book::ComputerGroup* computer_group);
     bool deleteChildComputerGroup(ComputerGroupItem* computer_group_item);
@@ -42,9 +51,9 @@ private:
 
     proto::address_book::ComputerGroup* computer_group_;
 
-    Q_DISABLE_COPY(ComputerGroupItem)
+    DISALLOW_COPY_AND_ASSIGN(ComputerGroupItem);
 };
 
-} // namespace aspia
+} // namespace console
 
-#endif // _ASPIA_CONSOLE__COMPUTER_GROUP_ITEM_H
+#endif // CONSOLE__COMPUTER_GROUP_ITEM_H

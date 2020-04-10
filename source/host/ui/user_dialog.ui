@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>343</width>
-    <height>278</height>
+    <width>394</width>
+    <height>286</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -97,8 +97,8 @@
           <string/>
          </property>
          <property name="icon">
-          <iconset resource="../../resources/resources.qrc">
-           <normaloff>:/icon/check-all.png</normaloff>:/icon/check-all.png</iconset>
+          <iconset resource="../resources/host.qrc">
+           <normaloff>:/img/check-all.png</normaloff>:/img/check-all.png</iconset>
          </property>
         </widget>
        </item>
@@ -114,8 +114,8 @@
           <string/>
          </property>
          <property name="icon">
-          <iconset resource="../../resources/resources.qrc">
-           <normaloff>:/icon/check-none.png</normaloff>:/icon/check-none.png</iconset>
+          <iconset resource="../resources/host.qrc">
+           <normaloff>:/img/check-none.png</normaloff>:/img/check-none.png</iconset>
          </property>
         </widget>
        </item>
@@ -161,7 +161,7 @@
   </layout>
  </widget>
  <resources>
-  <include location="../../resources/resources.qrc"/>
+  <include location="../resources/host.qrc"/>
  </resources>
  <connections/>
 </ui>

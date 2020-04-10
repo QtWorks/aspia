@@ -1,37 +1,87 @@
 //
-// PROJECT:         Aspia
-// FILE:            crypto/random.cc
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
 #include "crypto/random.h"
 
-extern "C" {
-#define SODIUM_STATIC
+#include "base/logging.h"
 
-#pragma warning(push, 3)
-#include <sodium.h>
-#pragma warning(pop)
-} // extern "C"
+#include <openssl/rand.h>
 
-namespace aspia {
+namespace crypto {
 
-// static
-QByteArray Random::generateBuffer(int size)
+namespace {
+
+template <class ContainerT>
+ContainerT generateBuffer(size_t size)
 {
-    QByteArray random_buffer;
+    ContainerT random_buffer;
     random_buffer.resize(size);
 
-    randombytes_buf(random_buffer.data(), random_buffer.size());
+    bool result = Random::fillBuffer(random_buffer.data(), random_buffer.size());
+    CHECK(result);
 
     return random_buffer;
 }
 
-// static
-quint32 Random::generateNumber()
+template <typename NumberT>
+NumberT generateNumber()
 {
-    return randombytes_random();
+    NumberT ret;
+
+    bool result = Random::fillBuffer(&ret, sizeof(ret));
+    CHECK(result);
+
+    return ret;
 }
 
-} // namespace aspia
+} // namespace
+
+// static
+bool Random::fillBuffer(void* buffer, size_t size)
+{
+    if (!buffer || !size)
+        return false;
+
+    return RAND_bytes(reinterpret_cast<uint8_t*>(buffer), size) > 0;
+}
+
+// static
+base::ByteArray Random::byteArray(size_t size)
+{
+    return generateBuffer<base::ByteArray>(size);
+}
+
+// static
+std::string Random::string(size_t size)
+{
+    return generateBuffer<std::string>(size);
+}
+
+// static
+uint32_t Random::number32()
+{
+    return generateNumber<uint32_t>();
+}
+
+// static
+uint64_t Random::number64()
+{
+    return generateNumber<uint64_t>();
+}
+
+} // namespace crypto

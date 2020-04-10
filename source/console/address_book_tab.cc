@@ -1,70 +1,53 @@
 //
-// PROJECT:         Aspia
-// FILE:            console/address_book_tab.cc
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
 #include "console/address_book_tab.h"
 
-#include <QFileDialog>
-#include <QMenu>
-#include <QMessageBox>
-
-#include "base/message_serialization.h"
-#include "codec/video_util.h"
+#include "base/logging.h"
 #include "console/address_book_dialog.h"
 #include "console/computer_dialog.h"
 #include "console/computer_group_dialog.h"
 #include "console/computer_item.h"
 #include "console/console_settings.h"
 #include "console/open_address_book_dialog.h"
-#include "crypto/data_encryptor.h"
+#include "crypto/data_cryptor_chacha20_poly1305.h"
+#include "crypto/data_cryptor_fake.h"
+#include "crypto/password_hash.h"
 #include "crypto/secure_memory.h"
 
-namespace aspia {
+#include <QFileDialog>
+#include <QMenu>
+#include <QMessageBox>
+
+namespace console {
 
 namespace {
-
-std::unique_ptr<proto::address_book::Computer> createDefaultComputer()
-{
-    std::unique_ptr<proto::address_book::Computer> computer =
-        std::make_unique<proto::address_book::Computer>();
-
-    computer->set_port(kDefaultHostTcpPort);
-
-    proto::desktop::Config* desktop_manage =
-        computer->mutable_session_config()->mutable_desktop_manage();
-
-    desktop_manage->set_features(proto::desktop::FEATURE_CLIPBOARD |
-                                 proto::desktop::FEATURE_CURSOR_SHAPE);
-    desktop_manage->set_video_encoding(proto::desktop::VideoEncoding::VIDEO_ENCODING_ZLIB);
-    desktop_manage->set_update_interval(30);
-    desktop_manage->set_compress_ratio(6);
-    VideoUtil::toVideoPixelFormat(PixelFormat::RGB565(), desktop_manage->mutable_pixel_format());
-
-    proto::desktop::Config* desktop_view =
-        computer->mutable_session_config()->mutable_desktop_view();
-
-    desktop_view->set_features(0);
-    desktop_view->set_video_encoding(proto::desktop::VideoEncoding::VIDEO_ENCODING_ZLIB);
-    desktop_view->set_update_interval(30);
-    desktop_view->set_compress_ratio(6);
-    VideoUtil::toVideoPixelFormat(PixelFormat::RGB565(), desktop_view->mutable_pixel_format());
-
-    return computer;
-}
 
 void cleanupComputer(proto::address_book::Computer* computer)
 {
     if (!computer)
         return;
 
-    secureMemZero(computer->mutable_name());
-    secureMemZero(computer->mutable_address());
-    secureMemZero(computer->mutable_username());
-    secureMemZero(computer->mutable_password());
-    secureMemZero(computer->mutable_comment());
+    crypto::memZero(computer->mutable_name());
+    crypto::memZero(computer->mutable_address());
+    crypto::memZero(computer->mutable_username());
+    crypto::memZero(computer->mutable_password());
+    crypto::memZero(computer->mutable_comment());
 }
 
 void cleanupComputerGroup(proto::address_book::ComputerGroup* computer_group)
@@ -80,8 +63,8 @@ void cleanupComputerGroup(proto::address_book::ComputerGroup* computer_group)
         proto::address_book::ComputerGroup* child_group =
             computer_group->mutable_computer_group(i);
 
-        secureMemZero(child_group->mutable_name());
-        secureMemZero(child_group->mutable_comment());
+        crypto::memZero(child_group->mutable_name());
+        crypto::memZero(child_group->mutable_comment());
 
         cleanupComputerGroup(child_group);
     }
@@ -94,8 +77,8 @@ void cleanupData(proto::address_book::Data* data)
 
     cleanupComputerGroup(data->mutable_root_group());
 
-    secureMemZero(data->mutable_salt1());
-    secureMemZero(data->mutable_salt2());
+    crypto::memZero(data->mutable_salt1());
+    crypto::memZero(data->mutable_salt2());
 }
 
 void cleanupFile(proto::address_book::File* file)
@@ -103,8 +86,8 @@ void cleanupFile(proto::address_book::File* file)
     if (!file)
         return;
 
-    secureMemZero(file->mutable_hashing_salt());
-    secureMemZero(file->mutable_data());
+    crypto::memZero(file->mutable_hashing_salt());
+    crypto::memZero(file->mutable_data());
 }
 
 } // namespace
@@ -112,7 +95,7 @@ void cleanupFile(proto::address_book::File* file)
 AddressBookTab::AddressBookTab(const QString& file_path,
                                proto::address_book::File&& file,
                                proto::address_book::Data&& data,
-                               QByteArray&& key,
+                               std::string&& key,
                                QWidget* parent)
     : ConsoleTab(ConsoleTab::AddressBook, parent),
       file_path_(file_path),
@@ -122,11 +105,27 @@ AddressBookTab::AddressBookTab(const QString& file_path,
 {
     ui.setupUi(this);
 
-    QList<int> sizes;
-    sizes.push_back(200);
-    sizes.push_back(width() - 200);
+    ui.tree_group->setComputerMimeType(ui.tree_computer->mimeType());
 
-    ui.splitter->setSizes(sizes);
+    Settings settings;
+
+    QByteArray splitter_state = settings.splitterState();
+    if (splitter_state.isEmpty())
+    {
+        QList<int> sizes;
+        sizes.push_back(200);
+        sizes.push_back(width() - 200);
+        ui.splitter->setSizes(sizes);
+    }
+    else
+    {
+        ui.splitter->restoreState(splitter_state);
+    }
+
+    QHeaderView* header = ui.tree_computer->header();
+    QByteArray columns_state = settings.columnsState();
+    if (!columns_state.isEmpty())
+        header->restoreState(columns_state);
 
     ComputerGroupItem* group_item = new ComputerGroupItem(data_.mutable_root_group(), nullptr);
 
@@ -153,6 +152,16 @@ AddressBookTab::AddressBookTab(const QString& file_path,
     };
 
     restore_child(group_item);
+
+    connect(ui.tree_group, &ComputerGroupTree::itemSelectionChanged, [this]()
+    {
+        if (ui.tree_group->dragging())
+            return;
+
+        QList<QTreeWidgetItem*> items = ui.tree_group->selectedItems();
+        if (!items.isEmpty())
+            onGroupItemClicked(items.front(), 0);
+    });
 
     connect(ui.tree_group, &ComputerGroupTree::itemClicked,
             this, &AddressBookTab::onGroupItemClicked);
@@ -184,8 +193,11 @@ AddressBookTab::~AddressBookTab()
     cleanupData(&data_);
     cleanupFile(&file_);
 
-    secureMemZero(&file_path_);
-    secureMemZero(&key_);
+    crypto::memZero(&key_);
+
+    Settings settings;
+    settings.setSplitterState(ui.splitter->saveState());
+    settings.setColumnsState(ui.tree_computer->header()->saveState());
 }
 
 // static
@@ -193,9 +205,9 @@ AddressBookTab* AddressBookTab::createNew(QWidget* parent)
 {
     proto::address_book::File file;
     proto::address_book::Data data;
-    QByteArray key;
+    std::string key;
 
-    AddressBookDialog dialog(parent, &file, &data, &key);
+    AddressBookDialog dialog(parent, QString(), &file, &data, &key);
     if (dialog.exec() != QDialog::Accepted)
         return nullptr;
 
@@ -215,14 +227,14 @@ AddressBookTab* AddressBookTab::openFromFile(const QString& file_path, QWidget* 
     QFile file(file_path);
     if (!file.open(QIODevice::ReadOnly))
     {
-        showOpenError(parent, tr("Unable to open address book file."));
+        showOpenError(parent, tr("Unable to open address book file \"%1\".").arg(file_path));
         return nullptr;
     }
 
     QByteArray buffer = file.readAll();
     if (buffer.isEmpty())
     {
-        showOpenError(parent, tr("Unable to read address book file."));
+        showOpenError(parent, tr("Unable to read address book file \"%1\".").arg(file_path));
         return nullptr;
     }
 
@@ -230,66 +242,62 @@ AddressBookTab* AddressBookTab::openFromFile(const QString& file_path, QWidget* 
 
     if (!address_book_file.ParseFromArray(buffer.constData(), buffer.size()))
     {
-        showOpenError(parent, tr("The address book file is corrupted or has an unknown format."));
+        showOpenError(parent,
+                      tr("The address book file \"%1\" is corrupted or has an unknown format.")
+                      .arg(file_path));
         return nullptr;
     }
 
-    secureMemZero(&buffer);
-
     proto::address_book::Data address_book_data;
-    QByteArray key;
+
+    std::unique_ptr<crypto::DataCryptor> cryptor;
+    std::string key;
 
     switch (address_book_file.encryption_type())
     {
         case proto::address_book::ENCRYPTION_TYPE_NONE:
-        {
-            if (!address_book_data.ParseFromString(address_book_file.data()))
-            {
-                showOpenError(parent, tr("The address book file is corrupted or has an unknown format."));
-                return nullptr;
-            }
-        }
-        break;
+            cryptor = std::make_unique<crypto::DataCryptorFake>();
+            break;
 
-        case proto::address_book::ENCRYPTION_TYPE_XCHACHA20_POLY1305:
+        case proto::address_book::ENCRYPTION_TYPE_CHACHA20_POLY1305:
         {
-            OpenAddressBookDialog dialog(parent, address_book_file.encryption_type());
+            OpenAddressBookDialog dialog(parent, file_path, address_book_file.encryption_type());
             if (dialog.exec() != QDialog::Accepted)
                 return nullptr;
 
-            key = DataEncryptor::createKey(
-                dialog.password().toUtf8(),
-                QByteArray::fromStdString(address_book_file.hashing_salt()),
-                address_book_file.hashing_rounds());
+            key = crypto::PasswordHash::hash(
+                crypto::PasswordHash::SCRYPT,
+                dialog.password().toStdString(),
+                address_book_file.hashing_salt());
 
-            QByteArray decrypted_data;
-
-            if (!DataEncryptor::decrypt(address_book_file.data().c_str(),
-                                        address_book_file.data().size(),
-                                        key,
-                                        &decrypted_data))
-            {
-                showOpenError(parent, tr("Unable to decrypt the address book with the specified password."));
-                return nullptr;
-            }
-
-            if (!parseMessage(decrypted_data, address_book_data))
-            {
-                showOpenError(parent, tr("The address book file is corrupted or has an unknown format."));
-                return nullptr;
-            }
-
-            secureMemZero(&decrypted_data);
+            cryptor = std::make_unique<crypto::DataCryptorChaCha20Poly1305>(key);
         }
         break;
 
         default:
-        {
-            showOpenError(parent, tr("The address book file is encrypted with an unsupported encryption type."));
-            return nullptr;
-        }
-        break;
+            break;
     }
+
+    if (!cryptor)
+    {
+        showOpenError(parent, tr("The address book file is encrypted with an unsupported encryption type."));
+        return nullptr;
+    }
+
+    std::string decrypted_data;
+    if (!cryptor->decrypt(address_book_file.data(), &decrypted_data))
+    {
+        showOpenError(parent, tr("Unable to decrypt the address book with the specified password."));
+        return nullptr;
+    }
+
+    if (!address_book_data.ParseFromString(decrypted_data))
+    {
+        showOpenError(parent, tr("The address book file is corrupted or has an unknown format."));
+        return nullptr;
+    }
+
+    crypto::memZero(&decrypted_data);
 
     return new AddressBookTab(file_path,
                               std::move(address_book_file),
@@ -303,13 +311,9 @@ QString AddressBookTab::addressBookName() const
     return QString::fromStdString(data_.root_group().name());
 }
 
-proto::address_book::Computer* AddressBookTab::currentComputer() const
+ComputerItem* AddressBookTab::currentComputer() const
 {
-    ComputerItem* current_item = dynamic_cast<ComputerItem*>(ui.tree_computer->currentItem());
-    if (!current_item)
-        return nullptr;
-
-    return current_item->computer();
+    return dynamic_cast<ComputerItem*>(ui.tree_computer->currentItem());
 }
 
 proto::address_book::ComputerGroup* AddressBookTab::currentComputerGroup() const
@@ -322,14 +326,23 @@ proto::address_book::ComputerGroup* AddressBookTab::currentComputerGroup() const
     return current_item->computerGroup();
 }
 
-void AddressBookTab::save()
+AddressBookTab* AddressBookTab::duplicateTab() const
 {
-    saveToFile(file_path_);
+    return new AddressBookTab(filePath(),
+                              proto::address_book::File(file_),
+                              proto::address_book::Data(data_),
+                              std::string(key_),
+                              static_cast<QWidget*>(parent()));
 }
 
-void AddressBookTab::saveAs()
+bool AddressBookTab::save()
 {
-    saveToFile(QString());
+    return saveToFile(file_path_);
+}
+
+bool AddressBookTab::saveAs()
+{
+    return saveToFile(QString());
 }
 
 void AddressBookTab::addComputerGroup()
@@ -344,8 +357,8 @@ void AddressBookTab::addComputerGroup()
 
     ComputerGroupDialog dialog(this,
                                ComputerGroupDialog::CreateComputerGroup,
-                               computer_group.get(),
-                               parent_item->computerGroup());
+                               parentName(parent_item),
+                               computer_group.get());
     if (dialog.exec() != QDialog::Accepted)
         return;
 
@@ -363,21 +376,48 @@ void AddressBookTab::addComputer()
     if (!parent_item)
         return;
 
-    std::unique_ptr<proto::address_book::Computer> computer = createDefaultComputer();
-
     ComputerDialog dialog(this,
-                          ComputerDialog::CreateComputer,
-                          computer.get(),
-                          parent_item->computerGroup());
+                          ComputerDialog::Mode::CREATE,
+                          parentName(parent_item));
     if (dialog.exec() != QDialog::Accepted)
         return;
 
-    proto::address_book::Computer* computer_released = computer.release();
+    proto::address_book::Computer* computer =
+        new proto::address_book::Computer(dialog.computer());
 
-    parent_item->addChildComputer(computer_released);
+    parent_item->addChildComputer(computer);
     if (ui.tree_group->currentItem() == parent_item)
     {
-        ui.tree_computer->addTopLevelItem(new ComputerItem(computer_released, parent_item));
+        ui.tree_computer->addTopLevelItem(new ComputerItem(computer, parent_item));
+    }
+
+    setChanged(true);
+}
+
+void AddressBookTab::copyComputer()
+{
+    ComputerItem* current_item = dynamic_cast<ComputerItem*>(ui.tree_computer->currentItem());
+    if (!current_item)
+        return;
+
+    ComputerGroupItem* parent_group_item = current_item->parentComputerGroupItem();
+    if (!parent_group_item)
+        return;
+
+    ComputerDialog dialog(this,
+                          ComputerDialog::Mode::COPY,
+                          parentName(parent_group_item),
+                          *current_item->computer());
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    proto::address_book::Computer* computer =
+        new proto::address_book::Computer(dialog.computer());
+
+    parent_group_item->addChildComputer(computer);
+    if (ui.tree_group->currentItem() == parent_group_item)
+    {
+        ui.tree_computer->addTopLevelItem(new ComputerItem(computer, parent_group_item));
     }
 
     setChanged(true);
@@ -389,11 +429,11 @@ void AddressBookTab::modifyAddressBook()
         dynamic_cast<ComputerGroupItem*>(ui.tree_group->topLevelItem(0));
     if (!root_item)
     {
-        qDebug("Invalid root item");
+        LOG(LS_WARNING) << "Invalid root item";
         return;
     }
 
-    AddressBookDialog dialog(this, &file_, &data_, &key_);
+    AddressBookDialog dialog(this, file_path_, &file_, &data_, &key_);
     if (dialog.exec() != QDialog::Accepted)
         return;
 
@@ -414,8 +454,8 @@ void AddressBookTab::modifyComputerGroup()
 
     ComputerGroupDialog dialog(this,
                                ComputerGroupDialog::ModifyComputerGroup,
-                               current_item->computerGroup(),
-                               parent_item->computerGroup());
+                               parentName(parent_item),
+                               current_item->computerGroup());
     if (dialog.exec() != QDialog::Accepted)
         return;
 
@@ -430,12 +470,13 @@ void AddressBookTab::modifyComputer()
         return;
 
     ComputerDialog dialog(this,
-                          ComputerDialog::ModifyComputer,
-                          current_item->computer(),
-                          current_item->parentComputerGroupItem()->computerGroup());
+                          ComputerDialog::Mode::MODIFY,
+                          parentName(current_item->parentComputerGroupItem()),
+                          *current_item->computer());
     if (dialog.exec() != QDialog::Accepted)
         return;
 
+    current_item->computer()->CopyFrom(dialog.computer());
     current_item->updateItem();
     setChanged(true);
 }
@@ -517,7 +558,7 @@ void AddressBookTab::onGroupContextMenu(const QPoint& point)
     onGroupItemClicked(current_item, 0);
 
     bool is_root = !current_item->parent();
-    emit computerGroupContextMenu(ui.tree_group->mapToGlobal(point), is_root);
+    emit computerGroupContextMenu(ui.tree_group->viewport()->mapToGlobal(point), is_root);
 }
 
 void AddressBookTab::onGroupItemCollapsed(QTreeWidgetItem* item)
@@ -569,7 +610,7 @@ void AddressBookTab::onComputerContextMenu(const QPoint& point)
         onComputerItemClicked(current_item, 0);
     }
 
-    emit computerContextMenu(current_item, ui.tree_computer->mapToGlobal(point));
+    emit computerContextMenu(current_item, ui.tree_computer->viewport()->mapToGlobal(point));
 }
 
 void AddressBookTab::onComputerItemDoubleClicked(QTreeWidgetItem* item, int column)
@@ -605,6 +646,72 @@ void AddressBookTab::showEvent(QShowEvent* event)
     QWidget::showEvent(event);
 }
 
+void AddressBookTab::keyPressEvent(QKeyEvent* event)
+{
+    QWidget* focus_widget = QApplication::focusWidget();
+
+    switch (event->key())
+    {
+        case Qt::Key_Insert:
+        {
+            if (focus_widget == ui.tree_group)
+                addComputerGroup();
+            else if (focus_widget == ui.tree_computer)
+                addComputer();
+        }
+        break;
+
+        case Qt::Key_F2:
+        {
+            if (focus_widget == ui.tree_group)
+            {
+                ComputerGroupItem* current_item =
+                    dynamic_cast<ComputerGroupItem*>(ui.tree_group->currentItem());
+                if (!current_item)
+                    break;
+
+                if (current_item->parent())
+                    modifyComputerGroup();
+                else
+                    modifyAddressBook();
+            }
+            else if (focus_widget == ui.tree_computer)
+            {
+                modifyComputer();
+            }
+        }
+        break;
+
+        case Qt::Key_Delete:
+        {
+            if (focus_widget == ui.tree_group)
+                removeComputerGroup();
+            else if (focus_widget == ui.tree_computer)
+                removeComputer();
+        }
+        break;
+
+        case Qt::Key_Return:
+        {
+            if (focus_widget == ui.tree_computer)
+            {
+                ComputerItem* current_item =
+                    dynamic_cast<ComputerItem*>(ui.tree_computer->currentItem());
+                if (!current_item)
+                    break;
+
+                emit computerDoubleClicked(current_item->computer());
+            }
+        }
+        break;
+
+        default:
+            break;
+    }
+
+    QWidget::keyPressEvent(event);
+}
+
 void AddressBookTab::setChanged(bool value)
 {
     is_changed_ = value;
@@ -615,6 +722,11 @@ void AddressBookTab::retranslateUi()
 {
     ui.retranslateUi(this);
 
+    ComputerGroupItem* root_item =
+        dynamic_cast<ComputerGroupItem*>(ui.tree_group->topLevelItem(0));
+    if (root_item)
+        root_item->updateItem();
+
     QTreeWidgetItem* current = ui.tree_group->currentItem();
     if (current)
         onGroupItemClicked(current, 0);
@@ -623,43 +735,41 @@ void AddressBookTab::retranslateUi()
 void AddressBookTab::updateComputerList(ComputerGroupItem* computer_group)
 {
     for (int i = ui.tree_computer->topLevelItemCount() - 1; i >= 0; --i)
-    {
-        QTreeWidgetItem* item = ui.tree_computer->takeTopLevelItem(i);
-        delete item;
-    }
+        std::unique_ptr<QTreeWidgetItem> item_deleter(ui.tree_computer->takeTopLevelItem(i));
 
     ui.tree_computer->addTopLevelItems(computer_group->ComputerList());
 }
 
 bool AddressBookTab::saveToFile(const QString& file_path)
 {
-    QByteArray serialized_data = serializeMessage(data_);
+    std::string serialized_data = data_.SerializeAsString();
+    std::unique_ptr<crypto::DataCryptor> cryptor;
 
     switch (file_.encryption_type())
     {
         case proto::address_book::ENCRYPTION_TYPE_NONE:
-            file_.set_data(serialized_data.constData(), serialized_data.size());
+            cryptor = std::make_unique<crypto::DataCryptorFake>();
             break;
 
-        case proto::address_book::ENCRYPTION_TYPE_XCHACHA20_POLY1305:
-        {
-            QByteArray encrypted_data = DataEncryptor::encrypt(serialized_data, key_);
-            file_.set_data(encrypted_data.constData(), encrypted_data.size());
-            secureMemZero(&encrypted_data);
-        }
-        break;
+        case proto::address_book::ENCRYPTION_TYPE_CHACHA20_POLY1305:
+            cryptor = std::make_unique<crypto::DataCryptorChaCha20Poly1305>(key_);
+            break;
 
         default:
-            qFatal("Unknown encryption type: %d", file_.encryption_type());
+            LOG(LS_FATAL) << "Unknown encryption type: " << file_.encryption_type();
             return false;
     }
 
-    secureMemZero(&serialized_data);
+    std::string encrypted_data;
+    CHECK(cryptor->encrypt(serialized_data, &encrypted_data));
+    crypto::memZero(&serialized_data);
+
+    file_.set_data(std::move(encrypted_data));
 
     QString path = file_path;
     if (path.isEmpty())
     {
-        ConsoleSettings settings;
+        Settings settings;
 
         path = QFileDialog::getSaveFileName(this,
                                             tr("Save Address Book"),
@@ -678,11 +788,12 @@ bool AddressBookTab::saveToFile(const QString& file_path)
         return false;
     }
 
-    QByteArray buffer = serializeMessage(file_);
+    base::ByteArray buffer = base::serialize(file_);
 
-    qint64 bytes_written = file.write(buffer);
+    int64_t bytes_written = file.write(
+        reinterpret_cast<const char*>(buffer.data()), buffer.size());
 
-    secureMemZero(&buffer);
+    crypto::memZero(buffer.data(), buffer.size());
 
     if (bytes_written != buffer.size())
     {
@@ -694,6 +805,15 @@ bool AddressBookTab::saveToFile(const QString& file_path)
 
     setChanged(false);
     return true;
+}
+
+// static
+QString AddressBookTab::parentName(ComputerGroupItem* item)
+{
+    if (!item->parent())
+        return tr("Root Group");
+
+    return QString::fromStdString(item->computerGroup()->name());
 }
 
 // static
@@ -724,4 +844,4 @@ void AddressBookTab::showSaveError(QWidget* parent, const QString& message)
     dialog.exec();
 }
 
-} // namespace aspia
+} // namespace console

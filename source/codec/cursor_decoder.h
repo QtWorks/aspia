@@ -1,36 +1,58 @@
 //
-// PROJECT:         Aspia
-// FILE:            codec/cursor_decoder.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef _ASPIA_CODEC__CURSOR_DECODER_H
-#define _ASPIA_CODEC__CURSOR_DECODER_H
+#ifndef CODEC__CURSOR_DECODER_H
+#define CODEC__CURSOR_DECODER_H
 
-#include "codec/decompressor_zlib.h"
-#include "desktop_capture/mouse_cursor_cache.h"
-#include "protocol/desktop_session.pb.h"
+#include "base/macros_magic.h"
+#include "base/memory/byte_array.h"
+#include "codec/scoped_zstd_stream.h"
 
-namespace aspia {
+#include <optional>
+
+namespace desktop {
+class MouseCursor;
+} // namespace desktop
+
+namespace proto {
+class CursorShape;
+} // namespace proto
+
+namespace codec {
 
 class CursorDecoder
 {
 public:
-    CursorDecoder() = default;
-    ~CursorDecoder() = default;
+    CursorDecoder();
+    ~CursorDecoder();
 
-    std::shared_ptr<MouseCursor> decode(const proto::desktop::CursorShape& cursor_shape);
+    std::shared_ptr<desktop::MouseCursor> decode(const proto::CursorShape& cursor_shape);
 
 private:
-    bool decompressCursor(const proto::desktop::CursorShape& cursor_shape, quint8* image);
+    base::ByteArray decompressCursor(const proto::CursorShape& cursor_shape);
 
-    std::unique_ptr<MouseCursorCache> cache_;
-    DecompressorZLIB decompressor_;
+    std::vector<std::shared_ptr<desktop::MouseCursor>> cache_;
+    std::optional<size_t> cache_size_;
+    ScopedZstdDStream stream_;
 
-    Q_DISABLE_COPY(CursorDecoder)
+    DISALLOW_COPY_AND_ASSIGN(CursorDecoder);
 };
 
-} // namespace aspia
+} // namespace codec
 
-#endif // _ASPIA_CODEC__CURSOR_DECODER_H
+#endif // CODEC__CURSOR_DECODER_H

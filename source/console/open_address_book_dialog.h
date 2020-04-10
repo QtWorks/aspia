@@ -1,25 +1,39 @@
 //
-// PROJECT:         Aspia
-// FILE:            console/open_address_book_dialog.h
-// LICENSE:         GNU General Public License 3
-// PROGRAMMERS:     Dmitry Chapyshev (dmitry@aspia.ru)
+// Aspia Project
+// Copyright (C) 2020 Dmitry Chapyshev <dmitry@aspia.ru>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
 //
 
-#ifndef _ASPIA_CONSOLE__OPEN_ADDRESS_BOOK_DIALOG_H
-#define _ASPIA_CONSOLE__OPEN_ADDRESS_BOOK_DIALOG_H
+#ifndef CONSOLE__OPEN_ADDRESS_BOOK_DIALOG_H
+#define CONSOLE__OPEN_ADDRESS_BOOK_DIALOG_H
 
-#include "protocol/address_book.pb.h"
+#include "base/macros_magic.h"
+#include "proto/address_book.pb.h"
 #include "ui_open_address_book_dialog.h"
 
-namespace aspia {
+namespace console {
 
 class OpenAddressBookDialog : public QDialog
 {
     Q_OBJECT
 
 public:
-    OpenAddressBookDialog(QWidget* parent, proto::address_book::EncryptionType encryption_type);
-    ~OpenAddressBookDialog();
+    OpenAddressBookDialog(QWidget* parent,
+                          const QString& file_path,
+                          proto::address_book::EncryptionType encryption_type);
+    ~OpenAddressBookDialog() = default;
 
     QString password() const;
 
@@ -30,9 +44,9 @@ private slots:
 private:
     Ui::OpenAddressBookDialog ui;
 
-    Q_DISABLE_COPY(OpenAddressBookDialog)
+    DISALLOW_COPY_AND_ASSIGN(OpenAddressBookDialog);
 };
 
-} // namespace aspia
+} // namespace console
 
-#endif // _ASPIA_CONSOLE__OPEN_ADDRESS_BOOK_DIALOG_H
+#endif // CONSOLE__OPEN_ADDRESS_BOOK_DIALOG_H

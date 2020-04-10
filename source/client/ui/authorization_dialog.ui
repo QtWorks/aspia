@@ -6,12 +6,15 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>283</width>
+    <width>306</width>
     <height>103</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Authorization</string>
+  </property>
+  <property name="sizeGripEnabled">
+   <bool>true</bool>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_3">
    <item>
@@ -67,8 +70,8 @@
             <string/>
            </property>
            <property name="icon">
-            <iconset resource="../../resources/resources.qrc">
-             <normaloff>:/icon/eye.png</normaloff>:/icon/eye.png</iconset>
+            <iconset resource="../resources/client.qrc">
+             <normaloff>:/img/eye.png</normaloff>:/img/eye.png</iconset>
            </property>
            <property name="checkable">
             <bool>true</bool>
@@ -94,7 +97,7 @@
   </layout>
  </widget>
  <resources>
-  <include location="../../resources/resources.qrc"/>
+  <include location="../resources/client.qrc"/>
  </resources>
  <connections>
   <connection>
